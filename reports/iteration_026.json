@@ -1,0 +1,50 @@
+{
+  "iteration": 26,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-02~2025-05",
+      "return": -0.06,
+      "bh": 1.47,
+      "excess": -1.53,
+      "wr": 50.1,
+      "pf": 0.94,
+      "long": 503,
+      "short": 407,
+      "cb_trades": 503,
+      "ple_trades": 407
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-09",
+      "return": -8.39,
+      "bh": 11.69,
+      "excess": -20.07,
+      "wr": 44.1,
+      "pf": 0.65,
+      "long": 147,
+      "short": 758,
+      "cb_trades": 498,
+      "ple_trades": 407
+    },
+    {
+      "window": 3,
+      "period": "2025-09~2025-12",
+      "return": 11.83,
+      "bh": -24.45,
+      "excess": 36.28,
+      "wr": 48.0,
+      "pf": 1.16,
+      "long": 260,
+      "short": 650,
+      "cb_trades": 333,
+      "ple_trades": 577
+    }
+  ],
+  "summary": {
+    "mean_return": 1.13,
+    "mean_excess": 4.89,
+    "all_positive": false
+  },
+  "approach": "Regime switch: CatBoost above SMA50, PLE below SMA50"
+}
