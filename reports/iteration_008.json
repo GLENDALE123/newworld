@@ -1,0 +1,50 @@
+{
+  "iteration": 8,
+  "bh": -39.44,
+  "results": {
+    "agree>=1": {
+      "ret": -2.66,
+      "trades": 3806,
+      "wr": 40.4,
+      "dd": 8.68,
+      "pf": 0.94
+    },
+    "agree>=1_SMA": {
+      "ret": 2.43,
+      "trades": 2140,
+      "wr": 41.0,
+      "dd": 4.49,
+      "pf": 1.1
+    },
+    "agree>=2": {
+      "ret": -0.16,
+      "trades": 3802,
+      "wr": 40.1,
+      "dd": 7.5,
+      "pf": 1.0
+    },
+    "agree>=2_SMA": {
+      "ret": 3.41,
+      "trades": 2182,
+      "wr": 40.7,
+      "dd": 3.96,
+      "pf": 1.14
+    },
+    "agree>=3": {
+      "ret": 4.63,
+      "trades": 3021,
+      "wr": 40.6,
+      "dd": 5.65,
+      "pf": 1.14
+    },
+    "agree>=3_SMA": {
+      "ret": 4.75,
+      "trades": 1762,
+      "wr": 41.3,
+      "dd": 3.57,
+      "pf": 1.22
+    }
+  },
+  "best": "agree>=3_SMA",
+  "notes": "3-model ensemble with agreement voting + SMA filter"
+}
