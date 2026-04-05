@@ -46,107 +46,70 @@ def _make_validator_data(n: int = 200, n_features: int = 4, seed: int = 42):
     return ohlcv, features, labels
 
 
-class TestStrategyValidator:
-    def test_run_full_validation_returns_report(self):
-        ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
-        model = MockModel()
-        validator = StrategyValidator(
-            ohlcv=ohlcv,
-            features=features,
-            labels=labels,
-            model=model,
-            tbm_config={"max_holding_bars": 3},
-            n_trials=1,
-            n_splits=3,
-            n_groups=4,
-            k_test_groups=1,
-            bootstrap_runs=10,
-        )
-        report = validator.run_full_validation()
+# Module-scoped fixture: run validation ONCE, share result across all tests
+@pytest.fixture(scope="module")
+def validation_report():
+    ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
+    model = MockModel()
+    validator = StrategyValidator(
+        ohlcv=ohlcv,
+        features=features,
+        labels=labels,
+        model=model,
+        tbm_config={"max_holding_bars": 3},
+        n_trials=1,
+        n_splits=3,
+        n_groups=4,
+        k_test_groups=1,
+        bootstrap_runs=10,
+    )
+    return validator.run_full_validation()
 
-        assert isinstance(report, ValidationReport)
-        assert report.verdict in ("PASS", "FAIL", "MARGINAL")
 
-    def test_report_has_all_sections(self):
-        ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
-        model = MockModel()
-        validator = StrategyValidator(
-            ohlcv=ohlcv,
-            features=features,
-            labels=labels,
-            model=model,
-            tbm_config={"max_holding_bars": 3},
-            n_trials=1,
-            n_splits=3,
-            n_groups=4,
-            k_test_groups=1,
-            bootstrap_runs=10,
-        )
-        report = validator.run_full_validation()
+@pytest.fixture(scope="module")
+def many_trials_report():
+    ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
+    model = MockModel()
+    validator = StrategyValidator(
+        ohlcv=ohlcv,
+        features=features,
+        labels=labels,
+        model=model,
+        tbm_config={"max_holding_bars": 3},
+        n_trials=100,
+        n_splits=3,
+        n_groups=4,
+        k_test_groups=1,
+        bootstrap_runs=10,
+    )
+    return validator.run_full_validation()
 
-        assert report.sample_info is not None
-        assert report.purged_cv is not None
-        assert report.cpcv is not None
-        assert report.feature_importance is not None
-        assert report.frac_diff is not None
-        assert report.multicollinearity is not None
 
-    def test_summary_contains_verdict(self):
-        ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
-        model = MockModel()
-        validator = StrategyValidator(
-            ohlcv=ohlcv,
-            features=features,
-            labels=labels,
-            model=model,
-            tbm_config={"max_holding_bars": 3},
-            n_trials=1,
-            n_splits=3,
-            n_groups=4,
-            k_test_groups=1,
-            bootstrap_runs=10,
-        )
-        report = validator.run_full_validation()
-        summary = report.summary()
-        assert "Verdict:" in summary
+def test_returns_report(validation_report):
+    assert isinstance(validation_report, ValidationReport)
+    assert validation_report.verdict in ("PASS", "FAIL", "MARGINAL")
 
-    def test_print_full_runs(self, capsys):
-        ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
-        model = MockModel()
-        validator = StrategyValidator(
-            ohlcv=ohlcv,
-            features=features,
-            labels=labels,
-            model=model,
-            tbm_config={"max_holding_bars": 3},
-            n_trials=1,
-            n_splits=3,
-            n_groups=4,
-            k_test_groups=1,
-            bootstrap_runs=10,
-        )
-        report = validator.run_full_validation()
-        report.print_full()
-        captured = capsys.readouterr()
-        assert "VALIDATION REPORT" in captured.out
-        assert "FINAL VERDICT" in captured.out
 
-    def test_many_trials_likely_fail(self):
-        """With many trials and random data, DSR should produce FAIL or MARGINAL."""
-        ohlcv, features, labels = _make_validator_data(n=120, n_features=3)
-        model = MockModel()
-        validator = StrategyValidator(
-            ohlcv=ohlcv,
-            features=features,
-            labels=labels,
-            model=model,
-            tbm_config={"max_holding_bars": 3},
-            n_trials=100,  # many trials -> high bar
-            n_splits=3,
-            n_groups=4,
-            k_test_groups=1,
-            bootstrap_runs=10,
-        )
-        report = validator.run_full_validation()
-        # With random data and 100 trials, should not pass
-        assert report.verdict in ("FAIL", "MARGINAL")
+def test_report_has_all_sections(validation_report):
+    assert validation_report.sample_info is not None
+    assert validation_report.purged_cv is not None
+    assert validation_report.cpcv is not None
+    assert validation_report.feature_importance is not None
+    assert validation_report.frac_diff is not None
+    assert validation_report.multicollinearity is not None
+
+
+def test_summary_contains_verdict(validation_report):
+    summary = validation_report.summary()
+    assert "Verdict:" in summary
+
+
+def test_print_full_runs(validation_report, capsys):
+    validation_report.print_full()
+    captured = capsys.readouterr()
+    assert "VALIDATION REPORT" in captured.out
+    assert "FINAL VERDICT" in captured.out
+
+
+def test_many_trials_likely_fail(many_trials_report):
+    assert many_trials_report.verdict in ("FAIL", "MARGINAL")
