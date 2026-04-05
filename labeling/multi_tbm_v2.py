@@ -122,13 +122,19 @@ def _compute_strategy_tbm(
     max_hold: int,
     direction: int,
     fee_pct: float = FEE_PCT,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute TBM + MAE + MFE + fee-adjusted RAR using ATR-based barriers."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute TBM + MAE + MFE + fee-adjusted RAR + sample weight.
+
+    Sample weight = magnitude_weight × speed_weight
+      magnitude: how much beyond TP (rewards large wins)
+      speed: how fast barrier was hit (rewards fast signals)
+    """
     n = len(closes)
     tbm = np.full(n, np.nan)
     mae = np.full(n, np.nan)
     mfe = np.full(n, np.nan)
     rar = np.full(n, np.nan)
+    weight = np.full(n, np.nan)
 
     for i in range(n - 1):
         entry = closes[i]
@@ -136,21 +142,17 @@ def _compute_strategy_tbm(
         if np.isnan(a) or a <= 0:
             continue
 
-        tp_dist = tp_mult * a / entry   # as percentage
-        sl_dist = sl_mult * a / entry
-
         if direction == 1:
             upper = entry + tp_mult * a
             lower = entry - sl_mult * a
         else:
-            upper = entry + sl_mult * a  # SL for short
-            lower = entry - tp_mult * a  # TP for short
+            upper = entry + sl_mult * a
+            lower = entry - tp_mult * a
 
         end = min(i + max_hold, n - 1)
         if end <= i:
             continue
 
-        # Path tracking
         path_h = highs[i + 1:end + 1]
         path_l = lows[i + 1:end + 1]
 
@@ -161,22 +163,22 @@ def _compute_strategy_tbm(
             mfe_val = (entry - path_l.min()) / entry
             mae_val = (entry - path_h.max()) / entry
 
-        # Barrier check
         hit = np.nan
         exit_price = closes[end]
+        bars_to_hit = max_hold  # default: full hold
 
         if direction == 1:
             for j in range(i + 1, end + 1):
                 if highs[j] >= upper:
-                    hit = 1.0; exit_price = upper; break
+                    hit = 1.0; exit_price = upper; bars_to_hit = j - i; break
                 if lows[j] <= lower:
-                    hit = -1.0; exit_price = lower; break
+                    hit = -1.0; exit_price = lower; bars_to_hit = j - i; break
         else:
             for j in range(i + 1, end + 1):
                 if lows[j] <= lower:
-                    hit = 1.0; exit_price = lower; break
+                    hit = 1.0; exit_price = lower; bars_to_hit = j - i; break
                 if highs[j] >= upper:
-                    hit = -1.0; exit_price = upper; break
+                    hit = -1.0; exit_price = upper; bars_to_hit = j - i; break
 
         if np.isnan(hit):
             if direction == 1:
@@ -192,15 +194,32 @@ def _compute_strategy_tbm(
             realized = (entry - exit_price) / entry
 
         net = realized - fee_pct
-        sigma = a / entry  # ATR as pct for RAR
+        sigma = a / entry
         rar_val = net / sigma if sigma > 0 else 0.0
+
+        # Sample weight: magnitude × speed
+        # Magnitude: |net_return| / (tp_mult * sigma) → how far beyond minimum
+        magnitude_w = abs(net) / max(tp_mult * sigma, 1e-8)
+
+        # Speed: (max_hold - bars_to_hit) / max_hold → 1.0 if instant, 0.0 if timeout
+        speed_w = (max_hold - bars_to_hit) / max_hold
+
+        # Combined: sqrt(magnitude * speed) — geometric mean
+        sample_w = np.sqrt(max(magnitude_w, 0) * max(speed_w, 0))
+
+        # Winners get positive weight, losers get base weight (still learn from losses)
+        if hit == 1.0 and net > 0:
+            sample_w = 1.0 + sample_w  # boost winners
+        else:
+            sample_w = 1.0  # base weight for losses
 
         tbm[i] = hit
         mae[i] = mae_val
         mfe[i] = mfe_val
         rar[i] = rar_val
+        weight[i] = sample_w
 
-    return tbm, mae, mfe, rar
+    return tbm, mae, mfe, rar, weight
 
 
 # ── Multi-Label Generator ──────────────────────────────────────────────────
@@ -257,7 +276,7 @@ def generate_multi_tbm_v2(
         for dir_name in DIRECTIONS:
             direction = 1 if dir_name == "long" else -1
 
-            raw_tbm, raw_mae, raw_mfe, raw_rar = _compute_strategy_tbm(
+            raw_tbm, raw_mae, raw_mfe, raw_rar, raw_weight = _compute_strategy_tbm(
                 h, l, c, atr,
                 tp_mult=strat_cfg["tp_atr_mult"],
                 sl_mult=strat_cfg["sl_atr_mult"],
@@ -274,6 +293,7 @@ def generate_multi_tbm_v2(
                 label_matrix[f"mae_{base}"] = np.where(mask, raw_mae, np.nan)
                 label_matrix[f"mfe_{base}"] = np.where(mask, raw_mfe, np.nan)
                 label_matrix[f"rar_{base}"] = np.where(mask, raw_rar, np.nan)
+                label_matrix[f"wgt_{base}"] = np.where(mask, raw_weight, np.nan)
 
                 done += 1
 
