@@ -74,8 +74,13 @@ STRATEGIES = {
         "tp_atr_mult": 2.0,
         "sl_atr_mult": 1.0,
         "atr_period": 14,
-        "max_hold_bars": None,  # set per timeframe
         "source_tf": "5m",
+    },
+    "intraday": {
+        "tp_atr_mult": 2.0,
+        "sl_atr_mult": 1.0,
+        "atr_period": 14,
+        "source_tf": "15m",
     },
     "daytrade": {
         "tp_atr_mult": 2.0,
@@ -93,9 +98,10 @@ STRATEGIES = {
 
 # Max holding periods per strategy
 HOLD_PERIODS = {
-    "scalp": 3,       # 3 bars of source_tf (5m) = 15 min
-    "daytrade": 12,   # 12 bars of source_tf (1h) = 12 hours
-    "swing": 42,      # 42 bars of source_tf (4h) = 7 days
+    "scalp": 3,       # 3 bars × 5m  = 15 min
+    "intraday": 4,    # 4 bars × 15m = 1 hour
+    "daytrade": 12,   # 12 bars × 1h = 12 hours
+    "swing": 42,      # 42 bars × 4h = 7 days
 }
 
 DIRECTIONS = ["long", "short"]
