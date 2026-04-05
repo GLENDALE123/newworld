@@ -1,0 +1,15 @@
+{
+  "iteration": 3,
+  "model": "PLE v4 (no daytrade, Kelly)",
+  "net_return_pct": 358.66,
+  "bh_return": -39.44,
+  "excess": 398.1,
+  "max_drawdown_pct": 52.01,
+  "total_trades": 4194,
+  "win_rate": 52.8,
+  "profit_factor": 1.37,
+  "avg_net_pnl": 0.3682,
+  "avg_kelly": 0.5,
+  "avg_size_pct": 10.0,
+  "notes": "Kelly too aggressive (avg 10%), DD 52%. Swing short dominates (4118/4194). L_equity exploded to 15.029. Need: cap Kelly, fix equity loss."
+}
