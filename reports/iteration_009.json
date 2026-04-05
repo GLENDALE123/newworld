@@ -1,0 +1,19 @@
+{
+  "iteration": 9,
+  "net_return": 11.56,
+  "bh": -39.44,
+  "excess": 51.0,
+  "max_dd": 7.78,
+  "wr": 41.8,
+  "pf": 0.86,
+  "trades": 2046,
+  "calmar": 1.49,
+  "model": "5-model ensemble + adaptive Kelly + SMA filter",
+  "config": {
+    "agree_min": 4,
+    "kelly_frac": 0.3,
+    "max_size": 0.05,
+    "dd_start": 0.03,
+    "sma": true
+  }
+}
