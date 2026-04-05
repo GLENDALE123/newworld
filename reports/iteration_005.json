@@ -1,0 +1,17 @@
+{
+  "iteration": 5,
+  "btc": {
+    "net_return": 27.86,
+    "bh": -39.44,
+    "excess": 67.3,
+    "max_dd": 10.47,
+    "trades": 3920,
+    "win_rate": 50.0,
+    "profit_factor": 1.29
+  },
+  "changes": [
+    "Fixed L_equity gradient explosion (clamp)",
+    "DD recovery (never halt, scale down)",
+    "Multi-asset test (ETH)"
+  ]
+}

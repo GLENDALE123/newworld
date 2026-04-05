@@ -69,9 +69,12 @@ class PLEv4Loss(nn.Module):
         trade_returns = selected_rar * trade_mask.float()
 
         if trade_mask.sum() > 1:
-            mean_r = trade_returns[trade_mask].mean()
-            std_r = trade_returns[trade_mask].std().clamp(min=1e-8)
-            L_equity = -(mean_r / std_r)
+            returns = trade_returns[trade_mask]
+            # Clamp extreme RAR values to prevent gradient explosion
+            returns = returns.clamp(-5.0, 5.0)
+            mean_r = returns.mean()
+            std_r = returns.std().clamp(min=0.01)
+            L_equity = -(mean_r / std_r).clamp(-3.0, 3.0)  # cap Sharpe loss
         else:
             L_equity = torch.tensor(0.0, device=device)
 
