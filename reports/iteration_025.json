@@ -1,0 +1,28 @@
+{
+  "iteration": 25,
+  "catboost": {
+    "windows": [
+      6.9,
+      -2.72,
+      -5.19
+    ],
+    "mean": -0.34
+  },
+  "ple": {
+    "windows": [
+      9.71,
+      -10.06,
+      34.6
+    ],
+    "mean": 11.42
+  },
+  "ensemble": {
+    "windows": [
+      1.63,
+      2.51,
+      -6.87
+    ],
+    "mean": -0.91
+  },
+  "winner": "PLE"
+}
