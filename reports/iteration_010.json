@@ -1,0 +1,43 @@
+{
+  "iteration": 10,
+  "results": {
+    "full_test": {
+      "return": -0.66,
+      "bh": -39.44,
+      "excess": 38.79,
+      "dd": 3.35,
+      "wr": 39.7,
+      "pf": 0.96,
+      "trades": 2439,
+      "long": 71,
+      "short": 2368
+    },
+    "bull_2024H2": {
+      "return": 0.12,
+      "bh": -16.5,
+      "excess": 16.62,
+      "dd": 1.36,
+      "wr": 42.9,
+      "pf": 1.01,
+      "trades": 1149,
+      "long": 56,
+      "short": 1093
+    },
+    "bear_2025H1": {
+      "return": -0.84,
+      "bh": -27.4,
+      "excess": 26.56,
+      "dd": 2.27,
+      "wr": 36.9,
+      "pf": 0.91,
+      "trades": 1290,
+      "long": 15,
+      "short": 1275
+    }
+  },
+  "model": "3-model ensemble, Sortino loss, agree>=2, SMA filter",
+  "changes": [
+    "Sortino loss (replaces Sharpe)",
+    "Bull/bear split validation"
+  ]
+}

@@ -68,13 +68,18 @@ class PLEv4Loss(nn.Module):
         trade_mask = (selected_prob > 0.5) & (selected_mask > 0)
         trade_returns = selected_rar * trade_mask.float()
 
-        if trade_mask.sum() > 1:
-            returns = trade_returns[trade_mask]
-            # Clamp extreme RAR values to prevent gradient explosion
-            returns = returns.clamp(-5.0, 5.0)
+        if trade_mask.sum() > 5:
+            returns = trade_returns[trade_mask].clamp(-3.0, 3.0)
             mean_r = returns.mean()
-            std_r = returns.std().clamp(min=0.01)
-            L_equity = -(mean_r / std_r).clamp(-3.0, 3.0)  # cap Sharpe loss
+            # Sortino: penalize downside only (more stable than Sharpe)
+            downside = returns[returns < 0]
+            if len(downside) > 1:
+                downside_std = downside.std().clamp(min=0.01)
+                sortino = mean_r / downside_std
+            else:
+                sortino = mean_r / returns.std().clamp(min=0.01)
+            # Also reward positive mean directly (helps early training)
+            L_equity = -(0.5 * sortino + 0.5 * mean_r * 10).clamp(-3.0, 3.0)
         else:
             L_equity = torch.tensor(0.0, device=device)
 
