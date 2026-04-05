@@ -79,6 +79,15 @@ def train_ple_v4(model, train_ds, val_ds, epochs=50, batch_size=2048,
         model.train()
         for batch in train_loader:
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
+            # Mixup: blend pairs of samples (50% chance per batch)
+            if np.random.random() < 0.5:
+                lam = np.random.beta(0.2, 0.2)
+                idx = torch.randperm(batch["features"].size(0), device=device)
+                for k in batch:
+                    if isinstance(batch[k], torch.Tensor) and batch[k].dtype == torch.float32:
+                        batch[k] = lam * batch[k] + (1 - lam) * batch[k][idx]
+
             out = model(batch["features"], batch["account"])
             losses = loss_fn(out, batch)
             optimizer.zero_grad()

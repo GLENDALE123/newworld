@@ -1,0 +1,10 @@
+{
+  "iteration": 32,
+  "windows": [
+    9.62,
+    -10.06,
+    34.61
+  ],
+  "mean": 11.39,
+  "approach": "Mixup training (Beta 0.2, 50% chance)"
+}
