@@ -190,8 +190,14 @@ def _cross_asset_features(
     f = {}
 
     for name, other in other_closes.items():
-        # Align
-        aligned = pd.DataFrame({"btc": btc_close, name: other}).dropna()
+        # Align (strip timezone if mismatch)
+        btc = btc_close.copy()
+        oth = other.copy()
+        if hasattr(btc.index, 'tz') and btc.index.tz is not None:
+            btc.index = btc.index.tz_localize(None)
+        if hasattr(oth.index, 'tz') and oth.index.tz is not None:
+            oth.index = oth.index.tz_localize(None)
+        aligned = pd.DataFrame({"btc": btc, name: oth}).dropna()
         if len(aligned) < 50:
             continue
 

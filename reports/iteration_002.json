@@ -1,0 +1,11 @@
+{
+  "iteration": 2,
+  "net_return": 12.654,
+  "bh_return": -39.9592,
+  "excess": 52.6133,
+  "trades": 3355,
+  "train_samples": 40262,
+  "features": 171,
+  "strategies": 24,
+  "win_rate": 50.31
+}
