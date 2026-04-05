@@ -75,77 +75,86 @@ class HierarchicalSelector(nn.Module):
     Total: 4×5×5 = 100 strategies, but only 14 classification heads.
     """
 
+    DIRECTIONS = ["long", "short"]
     REGIMES = ["dump", "range", "surge", "volatile"]
-    TIMEFRAMES = ["15m", "1h", "3m", "4h", "5m"]
-    RR_TYPES = ["1to1", "1to2", "2to1", "tight", "wide"]
+    TIMEFRAMES = ["15m", "1h", "4h", "5m"]
+    RR_TYPES = ["1to1", "1to2", "2to1", "wide"]
 
     def __init__(self, dim: int, dropout: float = 0.1):
         super().__init__()
 
-        # Stage 1: Regime classifier
-        self.regime_head = nn.Sequential(
+        # Stage 0: Direction (2-way)
+        self.dir_head = nn.Sequential(
             nn.Linear(dim, dim // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim // 2, 2),
+        )
+
+        # Stage 1: Regime classifier (conditioned on direction)
+        self.dir_embed = nn.Embedding(2, dim // 4)
+        self.regime_head = nn.Sequential(
+            nn.Linear(dim + dim // 4, dim // 2),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(dim // 2, 4),
         )
 
-        # Stage 2: Timeframe selector (conditioned on regime embedding)
+        # Stage 2: Timeframe selector
         self.regime_embed = nn.Embedding(4, dim // 4)
         self.tf_head = nn.Sequential(
-            nn.Linear(dim + dim // 4, dim // 2),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(dim // 2, 5),
-        )
-
-        # Stage 3: RR selector (conditioned on regime + tf embedding)
-        self.tf_embed = nn.Embedding(5, dim // 4)
-        self.rr_head = nn.Sequential(
             nn.Linear(dim + dim // 4 + dim // 4, dim // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(dim // 2, 5),
+            nn.Linear(dim // 2, 4),
+        )
+
+        # Stage 3: RR selector
+        self.tf_embed = nn.Embedding(4, dim // 4)
+        self.rr_head = nn.Sequential(
+            nn.Linear(dim + dim // 4 + dim // 4 + dim // 4, dim // 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim // 2, 4),
         )
 
     def forward(self, h: torch.Tensor) -> dict:
         """
-        Returns:
-            regime_logits: (B, 4)
-            tf_logits: (B, 5)
-            rr_logits: (B, 5)
-            regime_probs, tf_probs, rr_probs: softmax probabilities
-            strategy_idx: (B,) index into 100 strategies
+        Returns logits/probs for each hierarchical stage + composite strategy_idx.
+        strategy_idx maps to: dir * 64 + regime * 16 + tf * 4 + rr
+        Total: 2 * 4 * 4 * 4 = 128 strategies
         """
-        # Stage 1
-        regime_logits = self.regime_head(h)
-        regime_probs = F.softmax(regime_logits, dim=-1)
-        regime_idx = regime_probs.argmax(dim=-1)  # (B,)
+        # Stage 0: Direction
+        dir_logits = self.dir_head(h)
+        dir_probs = F.softmax(dir_logits, dim=-1)
+        dir_idx = dir_probs.argmax(dim=-1)
 
-        # Stage 2 (conditioned)
-        r_emb = self.regime_embed(regime_idx)  # (B, dim//4)
-        tf_input = torch.cat([h, r_emb], dim=-1)
-        tf_logits = self.tf_head(tf_input)
+        # Stage 1: Regime (conditioned on direction)
+        d_emb = self.dir_embed(dir_idx)
+        regime_logits = self.regime_head(torch.cat([h, d_emb], dim=-1))
+        regime_probs = F.softmax(regime_logits, dim=-1)
+        regime_idx = regime_probs.argmax(dim=-1)
+
+        # Stage 2: Timeframe
+        r_emb = self.regime_embed(regime_idx)
+        tf_logits = self.tf_head(torch.cat([h, d_emb, r_emb], dim=-1))
         tf_probs = F.softmax(tf_logits, dim=-1)
         tf_idx = tf_probs.argmax(dim=-1)
 
-        # Stage 3 (conditioned)
+        # Stage 3: Risk/Reward
         t_emb = self.tf_embed(tf_idx)
-        rr_input = torch.cat([h, r_emb, t_emb], dim=-1)
-        rr_logits = self.rr_head(rr_input)
+        rr_logits = self.rr_head(torch.cat([h, d_emb, r_emb, t_emb], dim=-1))
         rr_probs = F.softmax(rr_logits, dim=-1)
         rr_idx = rr_probs.argmax(dim=-1)
 
-        # Composite strategy index: regime * 25 + tf * 5 + rr
-        strategy_idx = regime_idx * 25 + tf_idx * 5 + rr_idx
+        # Composite: dir * 64 + regime * 16 + tf * 4 + rr
+        strategy_idx = dir_idx * 64 + regime_idx * 16 + tf_idx * 4 + rr_idx
 
         return {
-            "regime_logits": regime_logits,
-            "regime_probs": regime_probs,
-            "tf_logits": tf_logits,
-            "tf_probs": tf_probs,
-            "rr_logits": rr_logits,
-            "rr_probs": rr_probs,
+            "dir_logits": dir_logits, "dir_probs": dir_probs,
+            "regime_logits": regime_logits, "regime_probs": regime_probs,
+            "tf_logits": tf_logits, "tf_probs": tf_probs,
+            "rr_logits": rr_logits, "rr_probs": rr_probs,
             "strategy_idx": strategy_idx,
         }
 
@@ -210,13 +219,14 @@ class PLEv3(nn.Module):
         self.selector = HierarchicalSelector(fusion_dim, dropout)
 
         # MAE/MFE towers (predict for selected strategy)
+        tower_input = fusion_dim + 2 + 4 + 4 + 4  # dir + regime + tf + rr one-hots
         self.mae_tower = nn.Sequential(
-            nn.Linear(fusion_dim + 4 + 5 + 5, 64),  # + regime/tf/rr one-hots
+            nn.Linear(tower_input, 64),
             nn.GELU(),
             nn.Linear(64, 1),
         )
         self.mfe_tower = nn.Sequential(
-            nn.Linear(fusion_dim + 4 + 5 + 5, 64),
+            nn.Linear(tower_input, 64),
             nn.GELU(),
             nn.Linear(64, 1),
         )
@@ -271,11 +281,12 @@ class PLEv3(nn.Module):
         selection = self.selector(fused)
 
         # MAE/MFE prediction (conditioned on selection)
+        dir_oh = F.one_hot(selection["dir_probs"].argmax(-1), 2).float()
         regime_oh = F.one_hot(selection["regime_probs"].argmax(-1), 4).float()
-        tf_oh = F.one_hot(selection["tf_probs"].argmax(-1), 5).float()
-        rr_oh = F.one_hot(selection["rr_probs"].argmax(-1), 5).float()
+        tf_oh = F.one_hot(selection["tf_probs"].argmax(-1), 4).float()
+        rr_oh = F.one_hot(selection["rr_probs"].argmax(-1), 4).float()
 
-        pred_input = torch.cat([fused, regime_oh, tf_oh, rr_oh], dim=-1)
+        pred_input = torch.cat([fused, dir_oh, regime_oh, tf_oh, rr_oh], dim=-1)
         mae_pred = self.mae_tower(pred_input).squeeze(-1)
         mfe_pred = self.mfe_tower(pred_input).squeeze(-1)
 

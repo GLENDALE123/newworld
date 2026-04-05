@@ -16,29 +16,32 @@ class PLEv3Loss(nn.Module):
         device = outputs["regime_logits"].device
         B = outputs["regime_logits"].shape[0]
 
-        # ── Oracle: decompose best strategy into regime/tf/rr ──
-        rar = batch["rar"]          # (B, 100)
-        rar_mask = batch["rar_mask"]  # (B, 100)
+        # ── Oracle: decompose best strategy into dir/regime/tf/rr ──
+        rar = batch["rar"]          # (B, 128)
+        rar_mask = batch["rar_mask"]  # (B, 128)
+        n_strategies = rar.shape[1]
 
         rar_oracle = rar.clone()
         rar_oracle[rar_mask == 0] = -1e9
         best_flat = rar_oracle.argmax(dim=1)  # (B,)
 
-        # Decompose flat index → regime, tf, rr
-        oracle_regime = best_flat // 25        # 0-3
-        oracle_tf = (best_flat % 25) // 5      # 0-4
-        oracle_rr = best_flat % 5              # 0-4
+        # Decompose: dir * 64 + regime * 16 + tf * 4 + rr
+        oracle_dir = best_flat // 64           # 0-1
+        oracle_regime = (best_flat % 64) // 16 # 0-3
+        oracle_tf = (best_flat % 16) // 4      # 0-3
+        oracle_rr = best_flat % 4              # 0-3
 
         # ── L1: Hierarchical Selection Loss ──
+        L_dir = F.cross_entropy(outputs["dir_logits"], oracle_dir)
         L_regime = F.cross_entropy(outputs["regime_logits"], oracle_regime)
         L_tf = F.cross_entropy(outputs["tf_logits"], oracle_tf)
         L_rr = F.cross_entropy(outputs["rr_logits"], oracle_rr)
-        L_select = L_regime + L_tf + L_rr
+        L_select = L_dir + L_regime + L_tf + L_rr
 
         # ── L2: MAE/MFE Calibration ──
         # Get actual MAE/MFE for the selected strategy
         selected_idx = outputs["strategy_idx"]  # (B,)
-        selected_idx_clamped = selected_idx.clamp(0, 99)
+        selected_idx_clamped = selected_idx.clamp(0, rar.shape[1] - 1)
 
         actual_mae = batch["mae"][torch.arange(B, device=device), selected_idx_clamped]
         actual_mfe = batch["mfe"][torch.arange(B, device=device), selected_idx_clamped]
@@ -97,6 +100,7 @@ class PLEv3Loss(nn.Module):
             "L_equity": L_equity.detach(),
             "L_conf": L_conf.detach(),
             "gate_entropy": entropy.detach(),
+            "oracle_dir_acc": (outputs["dir_probs"].argmax(-1) == oracle_dir).float().mean().detach(),
             "oracle_regime_acc": (outputs["regime_probs"].argmax(-1) == oracle_regime).float().mean().detach(),
             "oracle_tf_acc": (outputs["tf_probs"].argmax(-1) == oracle_tf).float().mean().detach(),
             "oracle_rr_acc": (outputs["rr_probs"].argmax(-1) == oracle_rr).float().mean().detach(),

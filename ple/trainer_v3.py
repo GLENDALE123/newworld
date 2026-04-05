@@ -146,10 +146,11 @@ def train_ple_v3(
             gw = sample_out["gate_weights"].cpu().numpy()
             gate_str = " ".join(f"{w:.2f}" for w in gw.mean(axis=0))
 
+        dir_acc = v.get('oracle_dir_acc', 0)
         print(f"  E{epoch+1:02d}  loss={v['total']:.3f}  "
-              f"reg={v['oracle_regime_acc']:.2f}  tf={v['oracle_tf_acc']:.2f}  rr={v['oracle_rr_acc']:.2f}  "
-              f"conf={v['confidence']:.3f}  gate=[{gate_str}]  "
-              f"ent={v['gate_entropy']:.3f}")
+              f"dir={dir_acc:.2f}  reg={v['oracle_regime_acc']:.2f}  "
+              f"tf={v['oracle_tf_acc']:.2f}  rr={v['oracle_rr_acc']:.2f}  "
+              f"conf={v['confidence']:.3f}  gate=[{gate_str}]")
 
         history.append(v)
 
