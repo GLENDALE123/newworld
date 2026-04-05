@@ -1,0 +1,52 @@
+{
+  "iteration": 20,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-02~2025-05",
+      "return": 2.0,
+      "bh": 1.47,
+      "excess": 0.54,
+      "wr": 41.9,
+      "pf": 0.81,
+      "long": 23,
+      "short": 407,
+      "trend_trades": 23,
+      "model_trades": 407
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-09",
+      "return": -7.22,
+      "bh": 11.69,
+      "excess": -18.91,
+      "wr": 41.0,
+      "pf": 0.52,
+      "long": 25,
+      "short": 407,
+      "trend_trades": 25,
+      "model_trades": 407
+    },
+    {
+      "window": 3,
+      "period": "2025-09~2025-12",
+      "return": 16.16,
+      "bh": -24.45,
+      "excess": 40.61,
+      "wr": 49.5,
+      "pf": 1.48,
+      "long": 25,
+      "short": 577,
+      "trend_trades": 25,
+      "model_trades": 577
+    }
+  ],
+  "summary": {
+    "mean_return": 3.65,
+    "std": 9.62,
+    "mean_excess": 7.41,
+    "all_positive": false,
+    "worst_window": -7.22
+  },
+  "approach": "Hybrid: B&H long above SMA + model-driven short below SMA"
+}
