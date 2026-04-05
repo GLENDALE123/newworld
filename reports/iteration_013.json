@@ -1,0 +1,51 @@
+{
+  "iteration": 13,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-01~2025-05",
+      "return": 7.5,
+      "bh": 9.52,
+      "excess": -2.02,
+      "wr": 47.7,
+      "pf": 1.09,
+      "long": 1928,
+      "short": 875,
+      "trades": 2803
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-10",
+      "return": -0.99,
+      "bh": 4.05,
+      "excess": -5.04,
+      "wr": 49.9,
+      "pf": 0.97,
+      "long": 635,
+      "short": 2044,
+      "trades": 2679
+    },
+    {
+      "window": 3,
+      "period": "2025-10~2026-02",
+      "return": -11.42,
+      "bh": -39.83,
+      "excess": 28.41,
+      "wr": 46.2,
+      "pf": 0.7,
+      "long": 2128,
+      "short": 628,
+      "trades": 2756
+    }
+  ],
+  "summary": {
+    "mean_return": -1.64,
+    "std": 7.74,
+    "mean_excess": 7.12
+  },
+  "changes": [
+    "Removed SMA filter",
+    "Direction from multi-label EV consensus",
+    "1.2x threshold for consensus"
+  ]
+}
