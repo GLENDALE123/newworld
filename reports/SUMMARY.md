@@ -28,14 +28,16 @@ Raw Data (78 symbols: OHLCV, tick_bar, metrics, funding)
 
 ```
 
-## Walk-Forward Results (Best Config: Iter 12)
+## Walk-Forward Results (Best Config: Iter 19)
 
 | Window | Period | Return | B&H | Excess | WR |
 |--------|--------|--------|------|--------|-----|
-| 1 | 2025-01~05 (bull) | -4.23% | +9.52% | -13.75% | 44.4% |
-| 2 | 2025-05~10 (flat) | +9.72% | +4.05% | +5.67% | 52.1% |
-| 3 | 2025-10~26-02 (bear) | -1.15% | -39.83% | +38.69% | 46.0% |
-| **Mean** | | **+1.45%** | **-8.75%** | **+10.20%** | |
+| 1 | 2025-02~05 (flat) | +11.89% | +1.47% | +10.43% | 42.9% |
+| 2 | 2025-05~09 (bull) | -10.06% | +11.69% | -21.75% | 41.1% |
+| 3 | 2025-09~12 (bear) | +30.55% | -24.45% | +55.00% | 56.0% |
+| **Mean** | | **+10.79%** | **-3.76%** | **+14.56%** | |
+
+*Best config: Adaptive thresholds (above SMA: long 0.40/short 0.55, below: long 0.55/short 0.40) + sequence features (lookback=8)*
 
 ## Key Findings
 
