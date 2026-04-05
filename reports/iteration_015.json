@@ -1,0 +1,13 @@
+{
+  "iteration": 15,
+  "bh": -39.96,
+  "test_period": "2025-10~2026-02",
+  "train_samples": 46972,
+  "test_samples": 13421,
+  "model_params": 797713,
+  "changes": [
+    "70% train (was 50%)",
+    "256 dim model (was 128)",
+    "80 epochs, lr=3e-4"
+  ]
+}
