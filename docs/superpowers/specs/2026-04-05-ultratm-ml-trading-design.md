@@ -1,21 +1,71 @@
-# ultraTM: 4계층 계층적 앙상블 암호화폐 선물 매매 시스템
+# ultraTM: TBM + 4계층 계층적 앙상블 암호화폐 선물 매매 시스템
 
 ## 개요
 
 NautilusTrader 기반의 4계층 계층적 앙상블 매매 시스템. 바이낸스 USDT-M 선물 시장에서
 멀티 종목/멀티 타임프레임 전략을 백테스트한다.
 
-핵심 철학: **아키텍처가 지능이다.** 복잡한 딥러닝 모델 대신 CatBoost + 룰 기반으로
-통일하되, 4계층 구조(데이터 앙상블 → 타임프레임 필터 → 국면 전문가 → 메타 레이블링)로
-엣지를 만든다.
+핵심 철학 두 가지:
+1. **아키텍처가 지능이다.** 복잡한 딥러닝 대신 CatBoost + 룰 기반으로 통일하되,
+   4계층 구조로 엣지를 만든다.
+2. **TBM(Triple Barrier Method)이 기반이다.** 단순 방향 라벨이 아니라 "익절/손절/시간초과
+   중 어디에 먼저 닿는가"로 문제를 정의한다. TBM은 라벨링, 메타 레이블링, 리스크 관리
+   세 곳에서 동시에 작동한다.
 
 1차 목표는 백테스트를 통한 전략 검증과 학습이며, 실거래 배포는 범위 밖이다.
 
-## 최종 아키텍처 (4계층)
+## Triple Barrier Method (TBM) 개요
+
+TBM은 모든 Phase에서 사용되는 핵심 라벨링 프레임워크다.
+
+### 세 개의 장벽
 
 ```
-[1] 데이터 계층 - Source Ensemble
-    각 데이터 소스별 독립 모델이 방향성 예측
+가격
+ ^
+ |     ---- 상단 장벽 (Take Profit): pt x sigma_t ----
+ |    /
+ |   /  가격 경로
+ |  /
+ | *  <-- 진입 시점
+ |  \
+ |   \
+ |     ---- 하단 장벽 (Stop Loss): sl x sigma_t ----
+ |
+ +---------------------------------------------------> 시간
+ |<--- 수직 장벽 (Max Holding Period) --->|
+```
+
+- **상단 장벽**: 진입가 + pt x sigma_t (익절)
+- **하단 장벽**: 진입가 - sl x sigma_t (손절)
+- **수직 장벽**: 최대 보유 시간 초과 시 현재 손익으로 청산
+- **sigma_t**: 최근 24시간 지수이동평균 변동성 (동적)
+
+### 라벨 규칙
+
+| 먼저 닿은 장벽 | 라벨 | 의미 |
+|----------------|------|------|
+| 상단 | +1 | 익절 성공 (롱 정답) |
+| 하단 | -1 | 손절 (숏 정답) |
+| 수직 (손익 > 0) | +1 | 시간 초과했지만 이익 |
+| 수직 (손익 <= 0) | -1 | 시간 초과, 손실 |
+
+### TBM이 작동하는 세 곳
+
+| 위치 | 역할 | Phase |
+|------|------|-------|
+| 학습 라벨 | Primary Model의 타겟 생성 | Phase 1~ |
+| 메타 라벨링 | Meta Model의 타겟 생성 (Primary가 맞았는가?) | Phase 5 |
+| 리스크 관리 | 실제 매매의 TP/SL/시간 청산 기준 | Phase 1~ |
+
+## 최종 아키텍처 (4계층 + TBM)
+
+```
+    Raw Data --> TBM Labeler --> 학습 라벨 생성 (모든 모델의 타겟)
+                                       |
+                                       v
+[1] 데이터 계층 - Source Ensemble (Primary Models)
+    "익절에 먼저 닿을까, 손절에 먼저 닿을까?"
 
          Price Data        Orderbook Data      On-chain Data
          (OHLCV+지표)      (호가잔량,CVD)       (펀딩비,OI,청산)
@@ -30,14 +80,14 @@ NautilusTrader 기반의 4계층 계층적 앙상블 매매 시스템. 바이낸
               +------------------+--------------------+
                                  |
                                  v
-[2] 필터링 계층 - Multi-Timeframe Filter
-    상위 타임프레임이 하위를 검열 (룰 기반)
+[2] 필터링 계층 - Multi-Timeframe Filter (룰 기반)
+    상위 타임프레임이 하위 신호를 검열
 
-        4h 대추세 판단 --> 하락장이면 매수 신호 차단/비중 축소
+        4h 대추세 판단 --> 역방향 신호 차단/비중 축소
                                  |
                                  v
 [3] 전문가 계층 - Regime Experts
-    시장 국면에 맞는 전문가의 가중치를 높임
+    시장 국면에 맞는 전문가 가중치 조절
 
         +-------------+  +-------------+  +-------------+
         | Trend       |  | MeanRevert  |  | Volatility  |
@@ -46,28 +96,30 @@ NautilusTrader 기반의 4계층 계층적 앙상블 매매 시스템. 바이낸
         +------+------+  +------+------+  +------+------+
                |                |                |
                +--------+-------+--------+-------+
-                        |                |
-                  Gating Network         |
-                  (국면 분류, CatBoost)    |
-                        |                |
-                        +--------+-------+
-                                 |
-                                 v
-[4] 메타 레이블링 계층 - Meta Decision
-    "방향"과 "확신"을 분리
+                        |
+                  Gating Network (국면 분류, CatBoost)
+                        |
+                        v
+[4] 메타 레이블링 계층 - Meta Decision (TBM 기반)
+    "이 신호가 실제로 상단 장벽에 닿을 확률은?"
 
-        Primary Signal (위 계층의 출력: 롱/숏)
+        Primary Signal (위 계층 출력: 롱/숏)
               |
               v
         +-----------+
-        | Meta      |    "이 신호가 맞을 확률은?"
-        | Model     |    "맞다면 얼마나 베팅할까?"
+        | Meta      |    타겟: Primary가 맞아서 상단 장벽에 닿았으면 1, 아니면 0
+        | Model     |    출력: 확률 p (0.0 ~ 1.0)
         | (CatBoost)|
         +-----+-----+
               |
               v
         +-----------+
-        | MLStrategy|    최종 주문 실행
+        | Bet Sizer |    p 기반 Kelly Criterion --> 포지션 사이즈
+        +-----------+
+              |
+              v
+        +-----------+
+        | MLStrategy|    TBM 장벽으로 TP/SL/시간청산 설정 + 주문 실행
         | (Nautilus)|
         +-----------+
 ```
@@ -94,12 +146,12 @@ NautilusTrader 기반의 4계층 계층적 앙상블 매매 시스템. 바이낸
 
 ---
 
-## Phase 1: 기초 — 단일 모델 백테스트 파이프라인
+## Phase 1: 기초 -- TBM + 단일 모델 백테스트
 
-**목표**: BTCUSDT 1개 종목, 1h 1개 타임프레임, CatBoost 1개 모델로 동작하는 최소
-백테스트 시스템을 만든다. 이 Phase가 이후 모든 것의 뼈대가 된다.
+**목표**: BTCUSDT 1개 종목, 1h 1개 타임프레임으로 TBM 라벨링 → CatBoost 학습 →
+NautilusTrader 백테스트가 동작하는 최소 파이프라인을 만든다.
 
-### 1.1 프로젝트 구조 (Phase 1 범위)
+### 1.1 프로젝트 구조
 
 ```
 ultraTM/
@@ -108,13 +160,15 @@ ultraTM/
 │   │   └── ohlcv.py            # Binance OHLCV 수집
 │   └── storage/
 │       └── parquet.py          # Parquet 저장/로딩
+├── labeling/
+│   └── tbm.py                  # Triple Barrier Method 라벨러
 ├── features/
 │   ├── technical.py            # 기술지표 계산
 │   └── pipeline.py             # 피처 파이프라인
 ├── models/
 │   └── catboost_model.py       # CatBoost 학습/예측
 ├── strategy/
-│   └── ml_strategy.py          # NautilusTrader Strategy
+│   └── ml_strategy.py          # NautilusTrader Strategy (TBM 장벽 기반)
 ├── backtest/
 │   ├── runner.py               # 백테스트 실행
 │   └── analysis.py             # 성과 분석
@@ -129,9 +183,39 @@ ultraTM/
 2. Parquet 포맷으로 `data/storage/BTCUSDT_1h.parquet` 저장
 3. NautilusTrader `Bar` 객체로 변환
 
-### 1.3 피처 엔지니어링
+### 1.3 TBM 라벨러
 
-Phase 1은 가격/거래량 기반 기본 지표만 사용한다.
+Phase 1의 가장 중요한 구현. 모든 이후 Phase의 기반이 된다.
+
+```python
+class TripleBarrierLabeler:
+    def __init__(self, pt_multiplier=1.0, sl_multiplier=1.0, max_holding_bars=4):
+        """
+        pt_multiplier: 익절 장벽 = pt_multiplier x sigma_t
+        sl_multiplier: 손절 장벽 = sl_multiplier x sigma_t
+        max_holding_bars: 수직 장벽 (최대 보유 봉 수)
+        """
+
+    def compute_volatility(self, close_prices, span=24):
+        """지수이동평균 변동성 계산"""
+
+    def label(self, ohlcv_df) -> pd.Series:
+        """
+        각 봉마다:
+        1. sigma_t 계산
+        2. 상단 장벽 = close + pt * sigma_t
+        3. 하단 장벽 = close - sl * sigma_t
+        4. 이후 max_holding_bars 내에서 어느 장벽에 먼저 닿는지 판정
+        5. 라벨 반환: +1, -1
+        """
+```
+
+Phase 1 TBM 파라미터:
+- `pt_multiplier`: 1.0 (변동성의 1배를 익절 목표)
+- `sl_multiplier`: 1.0 (변동성의 1배를 손절 기준)
+- `max_holding_bars`: 4 (4시간 최대 보유)
+
+### 1.4 피처 엔지니어링
 
 | 카테고리 | 피처 |
 |----------|------|
@@ -140,45 +224,61 @@ Phase 1은 가격/거래량 기반 기본 지표만 사용한다.
 | 변동성 | Bollinger Bands(20, 2), ATR(14) |
 | 거래량 | OBV, Volume SMA ratio(20) |
 
-### 1.4 CatBoost 모델
+### 1.5 CatBoost 모델
 
 - **종목**: BTCUSDT만
 - **타임프레임**: 1h만
 - **입력**: 위 피처 테이블
-- **타겟**: 향후 3봉(3시간) 수익률 방향 (1=롱, -1=숏, 중립 구간 제외)
+- **타겟**: TBM 라벨 (+1=상단 장벽 도달, -1=하단 장벽 도달)
 - **학습**: Walk-forward validation
   - 학습 윈도우: 3개월 롤링
   - 검증 윈도우: 1개월
 - **GPU**: `task_type='GPU'`
 - **평가**: Accuracy, Precision, F1, 백테스트 수익
 
-### 1.5 NautilusTrader Strategy
+### 1.6 NautilusTrader Strategy (TBM 장벽 기반)
+
+Strategy가 직접 TBM 장벽을 TP/SL로 사용한다.
 
 ```python
 class MLStrategy(Strategy):
     def on_bar(self, bar: Bar):
         features = self.feature_pipeline.compute(bar)
         signal = self.model.predict(features)
+        sigma_t = self.compute_volatility(bar)
 
-        if signal == 1 and not self.has_long_position():
-            self.enter_long(bar.instrument_id)
-        elif signal == -1 and not self.has_short_position():
-            self.enter_short(bar.instrument_id)
-        elif signal == 0 and self.has_position():
+        if signal == 1 and not self.has_position():
+            entry_price = bar.close
+            tp = entry_price + self.pt * sigma_t   # 상단 장벽
+            sl = entry_price - self.sl * sigma_t   # 하단 장벽
+            self.enter_long(bar.instrument_id, tp=tp, sl=sl)
+            self.holding_start = bar.ts_event      # 수직 장벽 타이머 시작
+
+        elif signal == -1 and not self.has_position():
+            entry_price = bar.close
+            tp = entry_price - self.pt * sigma_t
+            sl = entry_price + self.sl * sigma_t
+            self.enter_short(bar.instrument_id, tp=tp, sl=sl)
+            self.holding_start = bar.ts_event
+
+        # 수직 장벽: 최대 보유 시간 초과 시 청산
+        if self.has_position() and self.bars_held >= self.max_holding_bars:
             self.close_position()
 ```
 
-### 1.6 리스크 관리
+### 1.7 리스크 관리
 
+- **TP/SL**: TBM 장벽이 곧 TP/SL (변동성 스케일링)
 - **포지션 사이징**: 계좌 자본의 2% 고정
-- **스탑로스**: ATR(14) x 1.5
+- **최대 보유**: max_holding_bars 초과 시 강제 청산
 - **최대 포지션**: 1개
 
-### 1.7 성공 기준
+### 1.8 성공 기준
 
-- 데이터 수집 → 피처 → 학습 → 백테스트 파이프라인이 끊김 없이 동작
-- 백테스트 결과(Sharpe, MDD, Win Rate)가 리포트로 출력됨
-- Buy & Hold 대비 비교 가능한 상태
+- TBM 라벨링이 정상 동작 (라벨 분포 확인: +1/-1 비율이 극단적이지 않음)
+- 데이터 수집 → TBM 라벨 → 피처 → 학습 → 백테스트 전체 파이프라인 동작
+- 백테스트에서 TP/SL/시간청산이 정확히 작동
+- 결과 리포트: Sharpe, MDD, Win Rate, Profit Factor
 
 ---
 
@@ -189,7 +289,7 @@ class MLStrategy(Strategy):
 ### 2.1 멀티 종목 확장
 
 - BTCUSDT, ETHUSDT, SOLUSDT 3개 종목
-- 종목별 독립 모델 학습 또는 종목을 피처로 포함한 통합 모델
+- 종목별 TBM 파라미터 자동 조정 (종목마다 변동성이 다르므로 sigma_t가 자동 반영)
 - 종목별 독립 포지션 관리
 
 ### 2.2 멀티 타임프레임 필터 (2계층)
@@ -205,25 +305,32 @@ class MLStrategy(Strategy):
 ```
 
 대추세 판단 룰:
-- 4h EMA(50) 위에 가격 → 상승 추세
-- 4h EMA(50) 아래에 가격 → 하락 추세
-- 4h BB(20) 폭이 ATR 대비 좁으면 → 횡보
+- 4h EMA(50) 위에 가격 --> 상승 추세
+- 4h EMA(50) 아래에 가격 --> 하락 추세
+- 4h BB(20) 폭이 ATR 대비 좁으면 --> 횡보
 
-### 2.3 추가 피처
+### 2.3 TBM 파라미터 적응
+
+타임프레임 필터 결과에 따라 TBM 장벽도 조정:
+- 추세 순방향 신호: pt_multiplier 확대 (1.5x) — 추세를 더 타게
+- 횡보 신호: pt_multiplier 축소 (0.7x) — 빨리 익절
+
+### 2.4 추가 피처
 
 - 상위 타임프레임(4h) 지표를 하위(1h)에 병합: 4h RSI, 4h MACD, 4h BB 위치
 - 5m/15m 데이터 수집 시작 (Phase 3 준비)
 
-### 2.4 성공 기준
+### 2.5 성공 기준
 
 - 3개 종목 동시 백테스트 동작
-- 타임프레임 필터 ON/OFF 비교 시 필터가 노이즈 매매를 줄이는지 확인
+- 타임프레임 필터 ON/OFF 비교 시 필터가 역방향 노이즈 매매를 줄이는지 확인
+- TBM 장벽 적응이 고정 장벽 대비 수익률 개선
 
 ---
 
 ## Phase 3: 데이터 소스 앙상블 (1계층)
 
-**목표**: 오더북, 온체인 데이터를 추가하고 데이터 소스별 독립 모델 3개를 만든다.
+**목표**: 오더북, 온체인 데이터를 추가하고 데이터 소스별 독립 Primary Model 3개를 만든다.
 
 ### 3.1 추가 데이터 수집
 
@@ -235,20 +342,20 @@ class MLStrategy(Strategy):
 | 롱숏 비율 | Binance REST API | Parquet |
 | 청산 데이터 | Binance WebSocket | Parquet |
 
-### 3.2 데이터 소스별 모델 (1계층 구현)
+### 3.2 데이터 소스별 Primary Model (1계층 구현)
 
-**세 모델은 완전히 독립적으로 학습된다.**
+**세 모델은 완전히 독립적으로 학습된다. 타겟은 모두 동일한 TBM 라벨.**
 
-| 모델 | 입력 피처 | 역할 |
+| 모델 | 입력 피처 | 질문 |
 |------|-----------|------|
-| Price Model | OHLCV + 기술지표 | 가격 패턴 기반 방향 예측 |
-| Liquidity Model | 오더북 스프레드, OBI, 깊이, 대형벽 | 유동성/수급 기반 방향 예측 |
-| External Model | 펀딩비 변화율, OI 다이버전스, 롱숏비율, 청산 클러스터 | 파생 지표 기반 방향 예측 |
+| Price Model | OHLCV + 기술지표 | "가격 패턴상 익절에 먼저 닿을까?" |
+| Liquidity Model | 오더북 스프레드, OBI, 깊이, 대형벽 | "수급상 익절에 먼저 닿을까?" |
+| External Model | 펀딩비 변화율, OI 다이버전스, 롱숏비율, 청산 클러스터 | "파생 지표상 익절에 먼저 닿을까?" |
 
 ### 3.3 소스 앙상블 규칙
 
-- 3개 모델 중 2개 이상 동의 → 신호 발생
-- 3개 모두 동의 → 강한 엣지, 비중 상향 가능
+- 3개 모델 중 2개 이상 동의 --> 신호 발생
+- 3개 모두 동의 --> 강한 엣지, TBM pt_multiplier 확대 가능
 
 ### 3.4 성공 기준
 
@@ -273,13 +380,14 @@ CatBoost 분류기로 현재 시장 국면을 3가지로 분류:
 
 ### 4.2 국면별 전문가
 
-| 전문가 | 최적 국면 | 전략 성격 |
-|--------|-----------|-----------|
-| Trend Expert | 추세장 | 추세 추종 — 브레이크아웃, 이평선 교차 |
-| MeanRevert Expert | 횡보장 | 역추세 — BB 상하단, RSI 과매수/과매도 |
-| Volatility Expert | 폭발장 | 변동성 포착 — 급변 직전 진입, 빠른 청산 |
+| 전문가 | 최적 국면 | TBM 파라미터 특성 |
+|--------|-----------|-------------------|
+| Trend Expert | 추세장 | pt 크게(1.5x), sl 보통, 보유시간 길게(8봉) |
+| MeanRevert Expert | 횡보장 | pt 작게(0.7x), sl 작게, 보유시간 짧게(2봉) |
+| Volatility Expert | 폭발장 | pt 크게(2.0x), sl 넓게(1.5x), 보유시간 짧게(2봉) |
 
-각 전문가도 CatBoost 모델이다. 단, 학습 데이터를 해당 국면 구간만 필터링하여 학습한다.
+각 전문가도 CatBoost 모델이며, 해당 국면 구간의 데이터만 필터링하여 학습한다.
+**전문가마다 TBM 파라미터가 다르다** — 국면에 맞는 리스크/리워드 비율을 적용.
 
 ### 4.3 가중치 조절
 
@@ -287,72 +395,119 @@ CatBoost 분류기로 현재 시장 국면을 3가지로 분류:
 Gating Network 출력: [추세: 0.7, 횡보: 0.2, 폭발: 0.1]
 
 최종 신호 = Trend Expert * 0.7 + MR Expert * 0.2 + Vol Expert * 0.1
+최종 TBM 파라미터 = Trend TBM * 0.7 + MR TBM * 0.2 + Vol TBM * 0.1
 ```
 
 ### 4.4 성공 기준
 
 - Gating Network의 국면 분류 정확도 70% 이상
 - 국면별 전문가 시스템이 Phase 3의 단일 앙상블 대비 드로다운 감소
+- 국면별 TBM 파라미터 적응이 고정 파라미터 대비 개선
 
 ---
 
-## Phase 5: 메타 레이블링 (4계층)
+## Phase 5: 메타 레이블링 + Bet Sizing (4계층)
 
-**목표**: "방향 예측"과 "확신도 판단"을 분리하여 Precision을 극대화한다.
+**목표**: TBM 기반 메타 레이블링으로 "방향"과 "확신"을 분리하고,
+확률 기반 포지션 사이징으로 Precision을 극대화한다.
 
-### 5.1 Primary Model vs Meta Model
+### 5.1 메타 라벨 생성 (TBM 핵심 활용)
+
+```
+1. Primary Model이 "롱" 신호 발생
+2. 실제로 상단 장벽에 닿았는가?
+   --> 닿았으면: meta_label = 1 (성공)
+   --> 못 닿았으면: meta_label = 0 (실패)
+3. 이 데이터로 Meta Model 학습
+```
+
+### 5.2 Primary Model vs Meta Model
 
 | 구분 | Primary Model | Meta Model |
 |------|---------------|------------|
-| 질문 | "지금 롱인가 숏인가?" | "이 신호가 맞을 확률은?" |
-| 입력 | Phase 1~4의 전체 파이프라인 출력 | Primary 신호 + 시장 환경 피처 |
-| 출력 | 방향 (롱/숏) | 확률 (0.0 ~ 1.0) |
-| 역할 | 방향 결정 | 진입 여부 + 포지션 사이즈 결정 |
+| 질문 | "익절에 먼저 닿을까 손절에 먼저 닿을까?" | "Primary가 맞아서 정말 장벽에 닿을까?" |
+| 타겟 | TBM 라벨 (+1/-1) | meta_label (1/0) |
+| 입력 | 데이터 소스별 피처 | Primary 신호 시점의 시장 환경 |
+| 출력 | 방향 (롱/숏) | 확률 p (0.0 ~ 1.0) |
+| 역할 | 100번 신호 생성 | 그중 승률 높은 30번만 통과 |
 
-### 5.2 Meta Model 입력 피처
+### 5.3 Meta Model 입력 피처
 
-Primary Model이 "매수" 신호를 보낸 시점의:
-- 현재 변동성 (ATR, BB 폭)
-- 현재 거래량 vs 평균 거래량
+Primary Model이 신호를 낸 시점의:
+- 현재 변동성 sigma_t (TBM 장벽 폭의 직접적 근거)
+- 현재 거래량 vs 24h 평균 거래량
 - 소스 모델 합의 수준 (3개 중 몇 개 동의)
-- 국면 전문가 확신도
-- 최근 N회 매매 승률 (전략의 최근 성적)
+- Gating Network 국면 확신도
+- 오더북 불균형 (OBI)
+- 펀딩비 방향
+- 최근 N회 매매의 연속 승/패 수 (전략 최근 성적)
 
-### 5.3 Meta Model 의사결정
+### 5.4 Bet Sizing (Kelly Criterion)
+
+Meta Model의 확률 p를 Kelly Criterion에 투입:
 
 ```
-Meta Model 출력 확률(p)에 따른 행동:
+f* = (p * b - q) / b
 
-p < 0.4  --> 신호 무시 (진입하지 않음)
-0.4 <= p < 0.6  --> 최소 비중 진입 (자본의 1%)
-0.6 <= p < 0.8  --> 기본 비중 진입 (자본의 2%)
-p >= 0.8  --> 확대 비중 진입 (자본의 3%)
+f*: 최적 베팅 비율 (자본 대비)
+p:  Meta Model 출력 확률 (승리 확률)
+q:  1 - p (패배 확률)
+b:  평균 승리 / 평균 손실 비율 (TBM pt/sl 비율에서 도출)
 ```
 
-### 5.4 리스크 관리 최종
+실전 안전장치:
+- Half Kelly 적용 (f* / 2) — 과적합 리스크 감소
+- 최소 비중: 자본의 0.5%
+- 최대 비중: 자본의 5%
+- p < 0.4일 때: 진입하지 않음 (Meta가 거부)
 
-- **포지션 사이징**: Meta Model 확률 기반 (위 표)
-- **스탑로스**: ATR(14) x 1.5 (Phase 1과 동일)
+### 5.5 리스크 관리 최종
+
+- **TP/SL**: 국면별 TBM 장벽 (Phase 4에서 결정)
+- **시간 청산**: 국면별 수직 장벽
+- **포지션 사이징**: Meta 확률 x Half Kelly
 - **상관관계 필터**: 멀티 종목 동시 포지션 간 상관관계 > 0.7이면 총 익스포저 제한
-- **드로다운 보호**: 최대 드로다운 10% 초과 시 REDUCING 상태 (포지션 축소만 허용)
+- **드로다운 보호**: 최대 드로다운 10% 초과 시 REDUCING 상태
 
-### 5.5 성공 기준
+### 5.6 성공 기준
 
-- Meta Model 도입 후 Precision 10% 이상 개선
-- 전체 시스템 Sharpe ratio > 1.0 (백테스트 기준)
-- "확대 비중" 진입 시 승률이 "최소 비중" 진입 대비 유의미하게 높음
+- Meta Model 도입 후 Precision 10% 이상 개선 (100번 중 30번만 치되 승률 대폭 상승)
+- Kelly 사이징이 고정 사이징 대비 수익률 및 Sharpe 개선
+- 전체 시스템 백테스트 Sharpe ratio > 1.0
 
 ---
 
 ## Phase별 요약
 
-| Phase | 추가 요소 | 아키텍처 계층 | 핵심 학습 |
-|-------|-----------|---------------|-----------|
-| 1 | BTCUSDT + 1h + CatBoost 1개 | - | 파이프라인 기초 |
-| 2 | 멀티 종목 + 4h 필터 | 2계층 (타임프레임 필터) | 노이즈 제거 |
-| 3 | 오더북/온체인 + 소스별 모델 3개 | 1계층 (데이터 앙상블) | 다양한 관점 |
-| 4 | 국면 분류 + 전문가 3개 | 3계층 (국면 전문가) | 적응적 전략 |
-| 5 | 메타 레이블링 | 4계층 (메타 의사결정) | 확신도/사이징 |
+| Phase | 핵심 추가 | 아키텍처 계층 | TBM 역할 |
+|-------|-----------|---------------|----------|
+| 1 | BTCUSDT + 1h + CatBoost 1개 | - | 라벨링 + TP/SL |
+| 2 | 멀티 종목 + 4h 필터 | 2계층 (타임프레임 필터) | 추세별 장벽 적응 |
+| 3 | 오더북/온체인 + 소스별 모델 3개 | 1계층 (데이터 앙상블) | 합의 시 장벽 확대 |
+| 4 | 국면 분류 + 전문가 3개 | 3계층 (국면 전문가) | 국면별 TBM 파라미터 |
+| 5 | 메타 레이블링 + Kelly Sizing | 4계층 (메타 의사결정) | 메타 라벨 생성 + Bet Sizing |
+
+## 전체 데이터 흐름 (Phase 5 완성 시)
+
+```
+1. Raw OHLCV/Orderbook/On-chain --> TBM Labeler --> 학습 라벨 (+1/-1)
+
+2. Features --> Primary Models (Price/Liquidity/External CatBoost x3)
+   --> "익절 도달 확률이 높은 방향(Side)" 출력
+
+3. 4h 타임프레임 필터 --> 역방향 신호 차단
+
+4. Gating Network --> 국면 판단 --> 전문가 가중 선택
+   --> 국면별 TBM 파라미터 결정
+
+5. Primary Signal + 시장 환경 --> Meta Model
+   --> "이 신호가 실제 상단 장벽에 닿을 확률(p)" 출력
+
+6. p --> Kelly Criterion --> 포지션 사이즈 결정
+
+7. MLStrategy --> NautilusTrader 주문 실행
+   (TP = 상단장벽, SL = 하단장벽, 시간청산 = 수직장벽)
+```
 
 ## 범위 밖
 
