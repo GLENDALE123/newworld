@@ -1,0 +1,60 @@
+{
+  "iteration": 11,
+  "bh": -39.44,
+  "results": {
+    "a>=2_sz2%_SMA": {
+      "ret": 23.34,
+      "trades": 2541,
+      "wr": 51.4,
+      "dd": 10.08,
+      "pf": 1.37,
+      "calmar": 2.32
+    },
+    "a>=2_sz3%_SMA": {
+      "ret": 37.76,
+      "trades": 2541,
+      "wr": 51.4,
+      "dd": 12.1,
+      "pf": 1.37,
+      "calmar": 3.12
+    },
+    "a>=2_sz5%_SMA": {
+      "ret": 73.52,
+      "trades": 2541,
+      "wr": 51.4,
+      "dd": 15.18,
+      "pf": 1.37,
+      "calmar": 4.84
+    },
+    "a>=3_sz2%_SMA": {
+      "ret": 23.35,
+      "trades": 2539,
+      "wr": 51.4,
+      "dd": 10.08,
+      "pf": 1.37,
+      "calmar": 2.32
+    },
+    "a>=3_sz3%_SMA": {
+      "ret": 37.78,
+      "trades": 2539,
+      "wr": 51.4,
+      "dd": 12.1,
+      "pf": 1.37,
+      "calmar": 3.12
+    },
+    "a>=3_sz5%_SMA": {
+      "ret": 73.57,
+      "trades": 2539,
+      "wr": 51.4,
+      "dd": 15.18,
+      "pf": 1.37,
+      "calmar": 4.85
+    }
+  },
+  "best": "a>=3_sz5%_SMA",
+  "changes": [
+    "Removed L_equity entirely",
+    "BCE + calibration only",
+    "Grid: agree/size combos"
+  ]
+}

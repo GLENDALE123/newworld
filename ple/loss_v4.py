@@ -68,20 +68,10 @@ class PLEv4Loss(nn.Module):
         trade_mask = (selected_prob > 0.5) & (selected_mask > 0)
         trade_returns = selected_rar * trade_mask.float()
 
-        if trade_mask.sum() > 5:
-            returns = trade_returns[trade_mask].clamp(-3.0, 3.0)
-            mean_r = returns.mean()
-            # Sortino: penalize downside only (more stable than Sharpe)
-            downside = returns[returns < 0]
-            if len(downside) > 1:
-                downside_std = downside.std().clamp(min=0.01)
-                sortino = mean_r / downside_std
-            else:
-                sortino = mean_r / returns.std().clamp(min=0.01)
-            # Also reward positive mean directly (helps early training)
-            L_equity = -(0.5 * sortino + 0.5 * mean_r * 10).clamp(-3.0, 3.0)
-        else:
-            L_equity = torch.tensor(0.0, device=device)
+        # L_equity REMOVED — prediction and execution are now separate.
+        # Model focuses purely on prediction accuracy (BCE + calibration).
+        # Equity optimization happens at inference/sizing level.
+        L_equity = torch.tensor(0.0, device=device)
 
         # ── L4: Confidence calibration ──
         # Confidence should predict "is there ANY profitable strategy right now?"
