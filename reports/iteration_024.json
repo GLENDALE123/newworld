@@ -1,0 +1,20 @@
+{
+  "iteration": 24,
+  "catboost": {
+    "mean": -0.34,
+    "windows": [
+      6.9,
+      -2.72,
+      -5.19
+    ]
+  },
+  "ple": {
+    "mean": 11.42,
+    "windows": [
+      9.71,
+      -10.06,
+      34.6
+    ]
+  },
+  "approach": "Head-to-head: CatBoost per label vs PLE v4, same features/labels/execution"
+}
