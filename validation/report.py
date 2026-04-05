@@ -291,4 +291,5 @@ class ValidationReport:
             print(f"  Win rate        : {bs.win_rate:.2%}")
             print(f"  Profit factor   : {bs.profit_factor:.4f}")
 
-        print("\n" + "=" * 60)
+        print(f"\n  FINAL VERDICT: {self.verdict}")
+        print("=" * 60)
