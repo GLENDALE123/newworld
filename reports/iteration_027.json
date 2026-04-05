@@ -1,0 +1,15 @@
+{
+  "iteration": 27,
+  "return": -10.18,
+  "bh": -27.91,
+  "excess": 17.73,
+  "wr": 45.1,
+  "pf": 0.81,
+  "trades": 2455,
+  "long": 1490,
+  "short": 965,
+  "train_samples": 45847,
+  "test_samples": 9825,
+  "features": 254,
+  "approach": "Full 2020-2026 history (price-only features), adaptive thresholds"
+}
