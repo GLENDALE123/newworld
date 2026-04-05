@@ -1,0 +1,51 @@
+{
+  "iteration": 22,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-01~2025-05",
+      "return": -0.11,
+      "bh": 12.44,
+      "excess": -12.55,
+      "wr": 49.2,
+      "pf": 1.02,
+      "long": 2230,
+      "short": 1102,
+      "avg_size": 1.64,
+      "avg_prob": 0.733
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-10",
+      "return": -5.09,
+      "bh": 5.44,
+      "excess": -10.53,
+      "wr": 47.0,
+      "pf": 0.86,
+      "long": 568,
+      "short": 2768,
+      "avg_size": 1.66,
+      "avg_prob": 0.762
+    },
+    {
+      "window": 3,
+      "period": "2025-10~2026-02",
+      "return": 4.01,
+      "bh": -41.86,
+      "excess": 45.87,
+      "wr": 49.9,
+      "pf": 1.01,
+      "long": 1420,
+      "short": 1916,
+      "avg_size": 2.68,
+      "avg_prob": 0.756
+    }
+  ],
+  "summary": {
+    "mean_return": -0.4,
+    "mean_excess": 7.6
+  },
+  "features": 435,
+  "flow_features": 243,
+  "approach": "Enhanced order flow (CVD momentum, trade size) + confidence sizing (1-5%)"
+}
