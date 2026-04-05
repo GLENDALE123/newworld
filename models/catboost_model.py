@@ -22,10 +22,16 @@ class TradingModel:
         }
         self.model: CatBoostClassifier | None = None
 
-    def train(self, X: pd.DataFrame, y: pd.Series) -> None:
+    def train(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        sample_weight: pd.Series | np.ndarray | None = None,
+    ) -> None:
         self.model = CatBoostClassifier(**self.params)
         y_binary = (y == 1.0).astype(int)
-        self.model.fit(X, y_binary)
+        sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
+        self.model.fit(X, y_binary, sample_weight=sw)
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         if self.model is None:
@@ -37,6 +43,11 @@ class TradingModel:
         if self.model is None:
             raise RuntimeError("Model not trained")
         return self.model.predict_proba(X)[:, 1]
+
+    def get_feature_importance(self) -> np.ndarray:
+        if self.model is None:
+            raise RuntimeError("Model not trained")
+        return np.asarray(self.model.get_feature_importance())
 
     def walk_forward(
         self,
