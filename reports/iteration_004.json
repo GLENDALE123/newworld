@@ -1,0 +1,32 @@
+{
+  "iteration": 4,
+  "bh_return": -39.44,
+  "results": {
+    "conservative": {
+      "return": 3.14,
+      "trades": 1362,
+      "wr": 52.3,
+      "dd": 5.02,
+      "avg_size": 1.09,
+      "halted": true
+    },
+    "moderate": {
+      "return": 1.87,
+      "trades": 1597,
+      "wr": 49.6,
+      "dd": 10.01,
+      "avg_size": 1.6,
+      "halted": true
+    },
+    "aggressive": {
+      "return": 4.48,
+      "trades": 1587,
+      "wr": 49.9,
+      "dd": 15.01,
+      "avg_size": 2.61,
+      "halted": true
+    }
+  },
+  "model": "PLE v4 (intraday+swing, 16 strats)",
+  "test_bars": 16776
+}
