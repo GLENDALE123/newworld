@@ -13,11 +13,7 @@ def _compute_average_uniqueness_with_selected(
     selected: list[int],
     candidate: int,
 ) -> float:
-    """Compute average uniqueness of candidate given already-selected samples.
-
-    Temporarily adds the candidate to the selected set and computes the
-    candidate's average uniqueness over its active timestamps.
-    """
+    """Compute average uniqueness of candidate given already-selected samples."""
     cols = selected + [candidate]
     sub_matrix = indicator_matrix[cols]
     concurrency = sub_matrix.sum(axis=1)
@@ -36,38 +32,28 @@ def sequential_bootstrap(
 ) -> list[int]:
     """Run sequential bootstrap, selecting samples proportional to uniqueness.
 
-    Algorithm:
-    1. Start with empty selection S.
-    2. For each candidate, compute its average uniqueness given S.
-    3. Sample one candidate with probability proportional to uniqueness.
-    4. Add to S, repeat until n_samples reached.
-
-    Args:
-        indicator_matrix: Binary indicator matrix (rows=timestamps, cols=label indices).
-        n_samples: Number of samples to draw. Defaults to number of labels.
-        random_state: Random seed for reproducibility.
-
-    Returns:
-        List of selected label indices (may contain duplicates like a bootstrap).
+    For large datasets (>1000 labels), falls back to fast approximation
+    using pre-computed uniqueness scores.
     """
     rng = np.random.default_rng(random_state)
     all_labels = list(indicator_matrix.columns)
     if n_samples is None:
         n_samples = len(all_labels)
 
+    # Fast path for large datasets: sample proportional to pre-computed uniqueness
+    if len(all_labels) > 1000:
+        return _fast_sequential_bootstrap(indicator_matrix, n_samples, rng)
+
     selected: list[int] = []
     for _ in range(n_samples):
-        # Compute average uniqueness for each candidate given current selection
         uniquenesses = np.zeros(len(all_labels))
         for j, label in enumerate(all_labels):
             uniquenesses[j] = _compute_average_uniqueness_with_selected(
                 indicator_matrix, selected, label
             )
 
-        # Convert to probabilities
         total = uniquenesses.sum()
         if total <= 0:
-            # Fallback: uniform random selection
             probs = np.ones(len(all_labels)) / len(all_labels)
         else:
             probs = uniquenesses / total
@@ -78,32 +64,52 @@ def sequential_bootstrap(
     return selected
 
 
+def _fast_sequential_bootstrap(
+    indicator_matrix: pd.DataFrame,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> list[int]:
+    """Approximate sequential bootstrap for large datasets.
+
+    Uses pre-computed uniqueness as sampling probabilities instead of
+    recomputing after each selection. O(n) instead of O(n^2).
+    """
+    uniq = compute_uniqueness(indicator_matrix)
+    all_labels = list(indicator_matrix.columns)
+
+    probs = uniq.values.astype(float)
+    total = probs.sum()
+    if total <= 0:
+        probs = np.ones(len(all_labels)) / len(all_labels)
+    else:
+        probs = probs / total
+
+    selected_idx = rng.choice(len(all_labels), size=n_samples, p=probs)
+    return [all_labels[i] for i in selected_idx]
+
+
 def estimate_effective_n(
     indicator_matrix: pd.DataFrame,
     n_bootstrap_runs: int = 100,
     random_state: int | None = None,
 ) -> int:
-    """Estimate effective number of independent samples via sequential bootstrap.
+    """Estimate effective number of independent samples.
 
-    Compares the mean uniqueness from sequential bootstrap to standard bootstrap.
-    effective_n ~ n_labels * (mean_uniqueness_seq / mean_uniqueness_standard)
+    For large datasets (>1000), uses mean uniqueness directly:
+    effective_n = total_n * mean_uniqueness
 
-    But a simpler approach: run sequential bootstrap once with n_samples = n_labels,
-    then count unique samples in the selection. This gives a lower-bound estimate
-    of independent samples.
-
-    For a more robust estimate, we average over multiple runs.
-
-    Args:
-        indicator_matrix: Binary indicator matrix.
-        n_bootstrap_runs: Number of bootstrap iterations to average.
-        random_state: Random seed.
-
-    Returns:
-        Estimated effective number of independent samples.
+    For small datasets, uses bootstrap counting.
     """
-    rng_base = np.random.default_rng(random_state)
     n_labels = len(indicator_matrix.columns)
+
+    # Fast path: estimate from uniqueness directly
+    if n_labels > 1000:
+        uniq = compute_uniqueness(indicator_matrix)
+        mean_uniq = float(uniq.mean())
+        return max(1, int(n_labels * mean_uniq))
+
+    # Slow path for small datasets: bootstrap counting
+    rng_base = np.random.default_rng(random_state)
     unique_counts = []
 
     for i in range(n_bootstrap_runs):
