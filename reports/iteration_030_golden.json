@@ -1,0 +1,27 @@
+{
+  "iteration": 30,
+  "golden_config": true,
+  "return": -1.98,
+  "bh": -22.58,
+  "excess": 20.6,
+  "max_dd": 6.54,
+  "wr": 47.9,
+  "pf": 0.97,
+  "calmar": -0.3,
+  "trades": 1138,
+  "long": 439,
+  "short": 699,
+  "ensemble_size": 3,
+  "features": 397,
+  "strategies": 16,
+  "test_period": "2025-08-21~2025-12-31",
+  "components": [
+    "PLE v4 multi-label (no L_equity)",
+    "3-model ensemble (seeds 42/123/777)",
+    "Adaptive SMA thresholds",
+    "Sequence features (lookback=8)",
+    "ATR-based TBM labels (fee-deducted)",
+    "Pos-weight BCE + calibration loss",
+    "DD-recovery sizing (3% base)"
+  ]
+}
