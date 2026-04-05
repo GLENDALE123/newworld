@@ -1,0 +1,51 @@
+{
+  "iteration": 12,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-01~2025-05",
+      "return": -4.23,
+      "bh": 9.52,
+      "excess": -13.75,
+      "wr": 44.4,
+      "pf": 0.9,
+      "trades": 1835,
+      "long": 1393,
+      "short": 442
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-10",
+      "return": 9.72,
+      "bh": 4.05,
+      "excess": 5.67,
+      "wr": 52.1,
+      "pf": 1.23,
+      "trades": 1849,
+      "long": 589,
+      "short": 1260
+    },
+    {
+      "window": 3,
+      "period": "2025-10~2026-02",
+      "return": -1.15,
+      "bh": -39.83,
+      "excess": 38.69,
+      "wr": 46.0,
+      "pf": 0.94,
+      "trades": 1748,
+      "long": 536,
+      "short": 1212
+    }
+  ],
+  "summary": {
+    "mean_return": 1.45,
+    "std_return": 5.98,
+    "mean_excess": 10.2,
+    "all_positive": false
+  },
+  "model": "PLE v4 (no L_equity), 3% sizing, SMA filter, agree>=2",
+  "changes": [
+    "Walk-forward validation with 3 rolling windows"
+  ]
+}
