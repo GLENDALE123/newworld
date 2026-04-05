@@ -1,0 +1,18 @@
+{
+  "iteration": 1,
+  "model": "PLE v4 multi-label",
+  "features": 212,
+  "strategies": 24,
+  "test_bars": 3355,
+  "initial_capital": 100000,
+  "final_capital": 87437.22,
+  "net_return_pct": -12.5628,
+  "total_trades": 1582,
+  "win_rate": 39.19,
+  "avg_gross_pnl": -0.0896,
+  "avg_net_pnl": -0.1696,
+  "profit_factor": 0.7271,
+  "avg_hold_hours": 6.4,
+  "bh_return": -40.0433,
+  "excess_return": 27.4805
+}
