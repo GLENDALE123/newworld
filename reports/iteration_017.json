@@ -1,0 +1,49 @@
+{
+  "iteration": 17,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-02~2025-05",
+      "return": 7.89,
+      "bh": 1.47,
+      "excess": 6.43,
+      "wr": 43.5,
+      "pf": 0.88,
+      "long": 61,
+      "short": 849
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-09",
+      "return": -10.06,
+      "bh": 11.69,
+      "excess": -21.75,
+      "wr": 41.1,
+      "pf": 0.58,
+      "long": 0,
+      "short": 910
+    },
+    {
+      "window": 3,
+      "period": "2025-09~2025-12",
+      "return": 27.78,
+      "bh": -24.45,
+      "excess": 52.23,
+      "wr": 54.6,
+      "pf": 1.58,
+      "long": 53,
+      "short": 857
+    }
+  ],
+  "summary": {
+    "mean_return": 8.54,
+    "std": 15.45,
+    "mean_excess": 12.3,
+    "all_positive": false
+  },
+  "changes": [
+    "SMA direction BOOST (not block)",
+    "Seq features from iter 16",
+    "Trend alignment factor in EV"
+  ]
+}
