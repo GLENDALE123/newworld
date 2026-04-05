@@ -1,0 +1,52 @@
+{
+  "iteration": 14,
+  "walk_forward": [
+    {
+      "window": 1,
+      "period": "2025-01~2025-05",
+      "return": -12.49,
+      "bh": 9.52,
+      "excess": -22.02,
+      "wr": 41.0,
+      "pf": 0.73,
+      "long": 1976,
+      "short": 1379,
+      "trades": 3355
+    },
+    {
+      "window": 2,
+      "period": "2025-05~2025-10",
+      "return": 6.96,
+      "bh": 4.05,
+      "excess": 2.91,
+      "wr": 47.1,
+      "pf": 1.11,
+      "long": 1638,
+      "short": 1717,
+      "trades": 3355
+    },
+    {
+      "window": 3,
+      "period": "2025-10~2026-02",
+      "return": -0.55,
+      "bh": -39.83,
+      "excess": 39.28,
+      "wr": 42.4,
+      "pf": 0.77,
+      "long": 1203,
+      "short": 2152,
+      "trades": 3355
+    }
+  ],
+  "summary": {
+    "mean_return": -2.03,
+    "std": 8.01,
+    "mean_excess": 6.72,
+    "all_positive": false
+  },
+  "model": "3-model ensemble + soft SMA filter + 3% sizing",
+  "changes": [
+    "Soft SMA: probability scaled by distance from SMA",
+    "3-model ensemble per window"
+  ]
+}
