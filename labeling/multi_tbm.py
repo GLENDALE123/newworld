@@ -96,10 +96,21 @@ def _compute_single_tbm(
     pt_mult: float | None = None,
     sl_mult: float | None = None,
     fixed_pct: float | None = None,
-) -> np.ndarray:
-    """Compute TBM labels for a single parameter set. Vectorized inner loop."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute TBM + MAE + MFE + Risk-Adjusted Return for a single parameter set.
+
+    Returns:
+        (tbm_labels, mae, mfe, rar) each np.ndarray of length n
+        - tbm: +1/-1 direction
+        - mae: max adverse excursion (worst drawdown during trade, as pct, always <= 0)
+        - mfe: max favorable excursion (best unrealized profit, as pct, always >= 0)
+        - rar: risk-adjusted return = realized_return / sigma_t
+    """
     n = len(closes)
-    labels = np.full(n, np.nan)
+    tbm = np.full(n, np.nan)
+    mae = np.full(n, np.nan)
+    mfe = np.full(n, np.nan)
+    rar = np.full(n, np.nan)
 
     for i in range(n - 1):
         entry = closes[i]
@@ -120,24 +131,43 @@ def _compute_single_tbm(
         if end <= i:
             continue
 
-        # Check barriers
+        # Track path: MAE and MFE
+        path_highs = highs[i + 1:end + 1]
+        path_lows = lows[i + 1:end + 1]
+
+        max_price = path_highs.max()
+        min_price = path_lows.min()
+
+        mfe_val = (max_price - entry) / entry   # best unrealized profit
+        mae_val = (min_price - entry) / entry    # worst unrealized loss
+
+        # Check barriers (which hit first)
         hit = np.nan
+        exit_price = closes[end]
         for j in range(i + 1, end + 1):
             if highs[j] >= upper:
                 hit = 1.0
+                exit_price = upper
                 break
             if lows[j] <= lower:
                 hit = -1.0
+                exit_price = lower
                 break
 
         if np.isnan(hit):
-            # Vertical barrier: use close at end
             pnl = closes[end] - entry
             hit = 1.0 if pnl > 0 else -1.0
+            exit_price = closes[end]
 
-        labels[i] = hit
+        realized_ret = (exit_price - entry) / entry
+        risk_adj = realized_ret / sigma if sigma > 0 else 0.0
 
-    return labels
+        tbm[i] = hit
+        mae[i] = mae_val
+        mfe[i] = mfe_val
+        rar[i] = risk_adj
+
+    return tbm, mae, mfe, rar
 
 
 # ── Multi-Label Matrix ───────────────────────────────────────────────────────
@@ -147,18 +177,21 @@ def generate_multi_tbm(
     vol_span: int = 500,
     progress: bool = True,
 ) -> pd.DataFrame:
-    """Generate 100-label TBM matrix from tick bar data.
+    """Generate 400-label matrix from tick bar data.
+
+    100 combinations x 4 label types:
+      - tbm_{tf}_{rr}_{regime}: direction (+1/-1)
+      - mae_{tf}_{rr}_{regime}: max adverse excursion (worst drawdown, <= 0)
+      - mfe_{tf}_{rr}_{regime}: max favorable excursion (best profit, >= 0)
+      - rar_{tf}_{rr}_{regime}: risk-adjusted return (return / volatility)
 
     Args:
-        tick_bar_df: DataFrame with columns [timestamp, open, high, low, close, volume]
-                     Must be sorted by timestamp.
-        vol_span: EWM span for volatility calculation (in tick bars).
+        tick_bar_df: DataFrame with [timestamp, open, high, low, close, volume].
+        vol_span: EWM span for volatility.
         progress: Print progress.
 
     Returns:
-        DataFrame with tick bar index and 100 label columns.
-        Column names: tbm_{timeframe}_{rr}_{regime}
-        Values: +1 (take profit hit), -1 (stop loss hit), NaN (insufficient data)
+        DataFrame with 400 columns. NaN where regime doesn't match or insufficient data.
     """
     df = tick_bar_df.copy()
     if "timestamp" in df.columns:
@@ -168,70 +201,73 @@ def generate_multi_tbm(
     highs = df["high"].values.astype(np.float64)
     lows = df["low"].values.astype(np.float64)
 
-    # Volatility (EWM std of returns)
     ret = pd.Series(closes).pct_change()
     volatility = ret.ewm(span=vol_span).std().values
 
-    # Detect regimes (using close prices resampled to ~1h for stability)
     close_series = pd.Series(closes, index=df.index)
-    # Use tick-bar based window: ~180 bars ≈ 1 hour at 20sec/bar
     bars_per_hour = _estimate_holding_bars(tick_bar_df, 60)
     regimes = detect_regimes(close_series, window=bars_per_hour, vol_window=bars_per_hour)
     regime_values = regimes.values
 
-    # Pre-compute holding bars for each timeframe
     holding_bars = {}
     for tf_name, tf_cfg in TIMEFRAMES.items():
         holding_bars[tf_name] = _estimate_holding_bars(tick_bar_df, tf_cfg["minutes"])
 
     if progress:
-        print(f"  Tick bars: {len(df)}")
-        print(f"  Bars/hour estimate: {bars_per_hour}")
+        print(f"  Tick bars: {len(df)}, Bars/hour: {bars_per_hour}")
         for tf, hb in holding_bars.items():
-            print(f"  {tf}: {hb} bars holding")
+            print(f"    {tf}: {hb} bars holding")
 
-    # Generate all 100 labels
     label_matrix = {}
-    total = len(TIMEFRAMES) * len(RR_RATIOS) * len(REGIMES)
+    total_combos = len(TIMEFRAMES) * len(RR_RATIOS)
     done = 0
 
-    for tf_name, tf_cfg in TIMEFRAMES.items():
+    for tf_name in TIMEFRAMES:
         max_hold = holding_bars[tf_name]
 
         for rr_name, rr_cfg in RR_RATIOS.items():
-            # Compute raw TBM for this timeframe + risk/reward
             if "fixed_pct" in rr_cfg:
-                raw_labels = _compute_single_tbm(
+                raw_tbm, raw_mae, raw_mfe, raw_rar = _compute_single_tbm(
                     highs, lows, closes, volatility, max_hold,
                     fixed_pct=rr_cfg["fixed_pct"],
                 )
             else:
-                raw_labels = _compute_single_tbm(
+                raw_tbm, raw_mae, raw_mfe, raw_rar = _compute_single_tbm(
                     highs, lows, closes, volatility, max_hold,
                     pt_mult=rr_cfg["pt_mult"],
                     sl_mult=rr_cfg["sl_mult"],
                 )
 
-            # Split by regime
             for regime in REGIMES:
-                col_name = f"tbm_{tf_name}_{rr_name}_{regime}"
                 regime_mask = regime_values == regime
-                regime_labels = np.where(regime_mask, raw_labels, np.nan)
-                label_matrix[col_name] = regime_labels
+                base = f"{tf_name}_{rr_name}_{regime}"
 
-                done += 1
-                if progress and done % 20 == 0:
-                    print(f"  [{done}/{total}] labels generated...")
+                label_matrix[f"tbm_{base}"] = np.where(regime_mask, raw_tbm, np.nan)
+                label_matrix[f"mae_{base}"] = np.where(regime_mask, raw_mae, np.nan)
+                label_matrix[f"mfe_{base}"] = np.where(regime_mask, raw_mfe, np.nan)
+                label_matrix[f"rar_{base}"] = np.where(regime_mask, raw_rar, np.nan)
+
+            done += 1
+            if progress and done % 5 == 0:
+                print(f"  [{done}/{total_combos}] combos done...")
 
     result = pd.DataFrame(label_matrix, index=df.index)
 
     if progress:
-        n_valid = result.notna().sum()
-        print(f"\n  Label matrix: {result.shape}")
-        print(f"  Valid labels per column (mean): {n_valid.mean():.0f}")
-        print(f"  Label balance (+1/-1) per column (mean):")
-        pos = (result == 1).sum().mean()
-        neg = (result == -1).sum().mean()
-        print(f"    +1: {pos:.0f}  -1: {neg:.0f}  ratio: {pos/(pos+neg):.2%}")
+        tbm_cols = [c for c in result.columns if c.startswith("tbm_")]
+        rar_cols = [c for c in result.columns if c.startswith("rar_")]
+        n_valid = result[tbm_cols].notna().sum()
+        print(f"\n  Label matrix: {result.shape[0]} rows x {result.shape[1]} cols")
+        print(f"  TBM valid/col (mean): {n_valid.mean():.0f}")
+        pos = (result[tbm_cols] == 1).sum().mean()
+        neg = (result[tbm_cols] == -1).sum().mean()
+        if pos + neg > 0:
+            print(f"  TBM balance: +1={pos:.0f} -1={neg:.0f} ({pos/(pos+neg):.1%})")
+        rar_mean = result[rar_cols].mean().mean()
+        print(f"  RAR mean: {rar_mean:.4f}")
+        mae_cols = [c for c in result.columns if c.startswith("mae_")]
+        mfe_cols = [c for c in result.columns if c.startswith("mfe_")]
+        print(f"  MAE mean: {result[mae_cols].mean().mean():.4f}")
+        print(f"  MFE mean: {result[mfe_cols].mean().mean():.4f}")
 
     return result
