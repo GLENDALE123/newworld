@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import numpy as np
 import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.config import BacktestEngineConfig
@@ -51,10 +52,13 @@ def run_backtest(
     instrument = TestInstrumentProvider.btcusdt_binance()
     engine.add_instrument(instrument)
 
-    # Data
+    # Data - ensure writable contiguous arrays (parquet buffers can be read-only)
     bar_type = BarType.from_str(f"{instrument.id}-1-HOUR-LAST-EXTERNAL")
     wrangler = BarDataWrangler(bar_type=bar_type, instrument=instrument)
-    bars = wrangler.process(ohlcv_df)
+    ohlcv_w = ohlcv_df.copy()
+    for col in ohlcv_w.columns:
+        ohlcv_w[col] = np.ascontiguousarray(ohlcv_w[col].values, dtype=np.float64)
+    bars = wrangler.process(ohlcv_w)
     engine.add_data(bars)
 
     # Strategy
