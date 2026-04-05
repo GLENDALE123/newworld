@@ -13,49 +13,69 @@ def build_indicator_matrix(
     """Build a binary indicator matrix: rows=timestamps, cols=label indices.
 
     indicator[t, i] = 1 if label i is active at time t (t_start_i <= t <= t_end_i).
-
-    Args:
-        tbm_timestamps: DataFrame with 't_start' and 't_end' columns, indexed by label index.
-        price_index: DatetimeIndex of all price timestamps.
-
-    Returns:
-        DataFrame of shape (len(price_index), len(tbm_timestamps)) with 0/1 values.
     """
     indicator = pd.DataFrame(0, index=price_index, columns=tbm_timestamps.index)
     for i, row in tbm_timestamps.iterrows():
-        t_start = row["t_start"]
-        t_end = row["t_end"]
-        mask = (indicator.index >= t_start) & (indicator.index <= t_end)
+        mask = (indicator.index >= row["t_start"]) & (indicator.index <= row["t_end"])
         indicator.loc[mask, i] = 1
     return indicator
 
 
-def compute_concurrency(indicator_matrix: pd.DataFrame) -> pd.Series:
-    """Compute concurrency at each time step: number of active labels.
+def _compute_concurrency_fast(
+    tbm_timestamps: pd.DataFrame,
+    price_index: pd.DatetimeIndex,
+) -> pd.Series:
+    """Compute concurrency without building full indicator matrix.
 
-    Args:
-        indicator_matrix: Binary indicator matrix (rows=timestamps, cols=labels).
-
-    Returns:
-        Series indexed by timestamps with integer concurrency counts.
+    Uses a sweep-line approach: O(n log n) instead of O(n^2).
     """
+    ts_values = price_index.values
+    starts = tbm_timestamps["t_start"].values
+    ends = tbm_timestamps["t_end"].values
+
+    # For each timestamp, count how many labels are active
+    # A label i is active at time t if starts[i] <= t <= ends[i]
+    # Use searchsorted for vectorized counting
+    starts_sorted = np.sort(starts)
+    ends_sorted = np.sort(ends)
+
+    # At time t: active labels = (labels that started <= t) - (labels that ended < t)
+    started = np.searchsorted(starts_sorted, ts_values, side="right")
+    ended = np.searchsorted(ends_sorted, ts_values, side="left")
+    concurrency = started - ended
+
+    return pd.Series(concurrency, index=price_index, dtype=np.int64)
+
+
+def _compute_uniqueness_fast(
+    tbm_timestamps: pd.DataFrame,
+    concurrency: pd.Series,
+) -> pd.Series:
+    """Compute average uniqueness per label using vectorized operations."""
+    price_index = concurrency.index
+    inv_conc = (1.0 / concurrency.replace(0, np.inf)).values
+    ts_values = price_index.values
+
+    starts = tbm_timestamps["t_start"].values
+    ends = tbm_timestamps["t_end"].values
+
+    uniqueness = np.empty(len(tbm_timestamps), dtype=np.float64)
+    for i in range(len(tbm_timestamps)):
+        mask = (ts_values >= starts[i]) & (ts_values <= ends[i])
+        active = inv_conc[mask]
+        uniqueness[i] = active.mean() if len(active) > 0 else 0.0
+
+    return pd.Series(uniqueness, index=tbm_timestamps.index)
+
+
+def compute_concurrency(indicator_matrix: pd.DataFrame) -> pd.Series:
+    """Compute concurrency at each time step from indicator matrix."""
     return indicator_matrix.sum(axis=1)
 
 
 def compute_uniqueness(indicator_matrix: pd.DataFrame) -> pd.Series:
-    """Compute average uniqueness per label.
-
-    uniqueness_i = mean(1/concurrency_t) for all t where label i is active.
-
-    Args:
-        indicator_matrix: Binary indicator matrix (rows=timestamps, cols=labels).
-
-    Returns:
-        Series indexed by label index with uniqueness values in (0, 1].
-    """
+    """Compute average uniqueness per label from indicator matrix."""
     concurrency = indicator_matrix.sum(axis=1)
-    # Avoid division by zero: timestamps with no active labels get inf, but
-    # they won't appear in any label's average since indicator is 0 there.
     inv_concurrency = 1.0 / concurrency.replace(0, np.inf)
 
     uniqueness = pd.Series(index=indicator_matrix.columns, dtype=np.float64)
@@ -76,29 +96,36 @@ def compute_sample_weights(
 
     weight_i = uniqueness_i * |return_i|
 
-    where return_i = (close[t_end_i] - close[t_start_i]) / close[t_start_i]
-
-    Args:
-        close_prices: Series of close prices with DatetimeIndex.
-        tbm_timestamps: DataFrame with 't_start' and 't_end' columns.
-
-    Returns:
-        Tuple of (concurrency, uniqueness, sample_weights) Series.
+    Uses fast vectorized computation (no full indicator matrix).
     """
-    indicator = build_indicator_matrix(tbm_timestamps, close_prices.index)
-    concurrency = compute_concurrency(indicator)
-    uniqueness = compute_uniqueness(indicator)
+    price_index = close_prices.index
 
-    # Compute absolute returns per label
-    abs_returns = pd.Series(index=tbm_timestamps.index, dtype=np.float64)
-    for i, row in tbm_timestamps.iterrows():
-        t_start = row["t_start"]
-        t_end = row["t_end"]
-        if t_start in close_prices.index and t_end in close_prices.index:
-            ret = (close_prices[t_end] - close_prices[t_start]) / close_prices[t_start]
-            abs_returns[i] = abs(ret)
-        else:
-            abs_returns[i] = 0.0
+    # Fast concurrency (sweep-line, O(n log n))
+    concurrency = _compute_concurrency_fast(tbm_timestamps, price_index)
+
+    # Fast uniqueness (vectorized loop)
+    uniqueness = _compute_uniqueness_fast(tbm_timestamps, concurrency)
+
+    # Vectorized absolute returns
+    starts = tbm_timestamps["t_start"].values
+    ends = tbm_timestamps["t_end"].values
+    close_vals = close_prices.values
+    ts_vals = price_index.values
+
+    start_idx = np.searchsorted(ts_vals, starts)
+    end_idx = np.searchsorted(ts_vals, ends)
+
+    # Clip indices to valid range
+    start_idx = np.clip(start_idx, 0, len(close_vals) - 1)
+    end_idx = np.clip(end_idx, 0, len(close_vals) - 1)
+
+    start_prices = close_vals[start_idx]
+    end_prices = close_vals[end_idx]
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        abs_returns = np.abs((end_prices - start_prices) / start_prices)
+    abs_returns = np.nan_to_num(abs_returns, nan=0.0, posinf=0.0, neginf=0.0)
+    abs_returns = pd.Series(abs_returns, index=tbm_timestamps.index)
 
     sample_weights = uniqueness * abs_returns
 

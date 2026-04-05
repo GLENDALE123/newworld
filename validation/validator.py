@@ -8,10 +8,8 @@ import numpy as np
 import pandas as pd
 
 from validation.core.sample_weights import (
-    build_indicator_matrix,
     compute_sample_weights,
 )
-from validation.core.sequential_bootstrap import estimate_effective_n
 from validation.core.purged_kfold import purged_kfold_cv
 from validation.core.cpcv import cpcv
 from validation.statistics.backtest_stats import compute_backtest_stats
@@ -55,23 +53,8 @@ class StrategyValidator:
         embargo_pct: float = 0.01,
         periods_per_year: int = 252,
         bootstrap_runs: int = 100,
+        skip_sfi: bool = False,
     ):
-        """Initialize the validator.
-
-        Args:
-            ohlcv: OHLCV DataFrame with DatetimeIndex.
-            features: Feature DataFrame aligned with labels.
-            labels: Label Series (+1/-1).
-            model: Model with train/predict/get_feature_importance.
-            tbm_config: TBM config with 'max_holding_bars' for timestamp construction.
-            n_trials: Number of strategy trials (for DSR).
-            n_splits: Purged K-Fold splits.
-            n_groups: CPCV groups.
-            k_test_groups: CPCV test groups per combination.
-            embargo_pct: Embargo fraction.
-            periods_per_year: For Sharpe annualization.
-            bootstrap_runs: Number of sequential bootstrap iterations.
-        """
         self.ohlcv = ohlcv
         self.features = features
         self.labels = labels
@@ -84,9 +67,9 @@ class StrategyValidator:
         self.embargo_pct = embargo_pct
         self.periods_per_year = periods_per_year
         self.bootstrap_runs = bootstrap_runs
+        self.skip_sfi = skip_sfi
 
     def _build_tbm_timestamps(self) -> pd.DataFrame:
-        """Construct TBM timestamp DataFrame from label index and config."""
         max_holding = self.tbm_config.get("max_holding_bars", 4)
         idx = self.labels.index
         n = len(idx)
@@ -95,32 +78,15 @@ class StrategyValidator:
         return pd.DataFrame({"t_start": t_starts, "t_end": t_ends}, index=range(n))
 
     def run_full_validation(self) -> ValidationReport:
-        """Execute all validation modules in order and build the report.
-
-        Execution order:
-        1. Sample weights (concurrency, uniqueness)
-        2. Sequential bootstrap (effective N)
-        3. Fractional differentiation (optimal d per feature)
-        4. Multicollinearity analysis
-        5. Purged K-Fold CV
-        6. CPCV
-        7. Feature importance (MDI, MDA, SFI)
-        8. Deflated Sharpe Ratio
-        9. Backtest statistics
-
-        Returns:
-            ValidationReport with all results and PASS/FAIL/MARGINAL verdict.
-        """
+        """Execute all validation modules and build the report."""
         report = ValidationReport()
         close = self.ohlcv["close"]
         tbm_ts = self._build_tbm_timestamps()
 
-        # Align features and labels to same index
         common_idx = self.features.index.intersection(self.labels.index)
         X = self.features.loc[common_idx]
         y = self.labels.loc[common_idx]
 
-        # Rebuild tbm_timestamps for aligned data
         max_holding = self.tbm_config.get("max_holding_bars", 4)
         n = len(common_idx)
         t_starts = common_idx
@@ -128,29 +94,34 @@ class StrategyValidator:
         tbm_aligned = pd.DataFrame({"t_start": t_starts, "t_end": t_ends}, index=range(n))
 
         # 1. Sample weights
+        print("  [1/8] Sample weights...")
         conc, uniq, sw = compute_sample_weights(close, tbm_ts)
-        indicator = build_indicator_matrix(tbm_ts, close.index)
-        eff_n = estimate_effective_n(indicator, n_bootstrap_runs=self.bootstrap_runs, random_state=42)
+        # Estimate effective N from mean uniqueness (avoids building huge indicator matrix)
+        # effective_n ~ total_n * mean_uniqueness (AFML approximation)
+        mean_uniq = float(uniq.mean())
+        eff_n = int(len(self.labels) * mean_uniq)
 
         report.sample_info = SampleInfoResult(
             concurrency=conc,
             uniqueness=uniq,
             sample_weights=sw,
-            mean_uniqueness=float(uniq.mean()),
+            mean_uniqueness=mean_uniq,
             effective_n=eff_n,
             total_n=len(self.labels),
         )
 
-        # Align sample weights to common_idx
         sw_aligned = sw.iloc[:n] if len(sw) >= n else pd.Series(np.ones(n), index=range(n))
 
         # 2. Fractional differentiation
+        print("  [2/8] Fractional differentiation...")
         report.frac_diff = fracdiff_analyze(X)
 
-        # 3. Multicollinearity (preliminary, without MDA -- MDA comes later)
+        # 3. Multicollinearity (preliminary)
+        print("  [3/8] Multicollinearity...")
         report.multicollinearity = analyze_multicollinearity(X)
 
         # 4. Purged K-Fold CV
+        print("  [4/8] Purged K-Fold CV...")
         report.purged_cv = purged_kfold_cv(
             X, y, self.model, tbm_aligned,
             sample_weight=sw_aligned,
@@ -160,6 +131,7 @@ class StrategyValidator:
         )
 
         # 5. CPCV
+        print("  [5/8] Combinatorial Purged CV...")
         report.cpcv = cpcv(
             X, y, self.model, tbm_aligned,
             sample_weight=sw_aligned,
@@ -170,28 +142,29 @@ class StrategyValidator:
         )
 
         # 6. Feature importance
+        print("  [6/8] Feature importance (MDI/MDA" + ("/SFI" if not self.skip_sfi else "") + ")...")
         report.feature_importance = compute_all_importance(
             X, y, self.model, tbm_aligned,
             sample_weight=sw_aligned,
             n_splits=self.n_splits,
             embargo_pct=self.embargo_pct,
             periods_per_year=self.periods_per_year,
+            skip_sfi=self.skip_sfi,
         )
 
         # Update multicollinearity with MDA ranking
         if report.feature_importance is not None:
+            print("  [7/8] Multicollinearity (with MDA)...")
             report.multicollinearity = analyze_multicollinearity(
                 X, mda_ranking=report.feature_importance.mda_ranking,
             )
 
         # 7. Deflated Sharpe
+        print("  [8/8] Deflated Sharpe...")
         if report.purged_cv is not None and report.purged_cv.fold_sharpes:
             mean_sr = report.purged_cv.mean_sharpe
-            # Use synthetic "returns" from CV predictions for DSR
-            # Approximate: use mean and std of fold Sharpes
             fold_sharpes = np.array(report.purged_cv.fold_sharpes)
             std_sr = np.std(fold_sharpes, ddof=1) if len(fold_sharpes) > 1 else 0.01
-            # Generate synthetic returns matching the observed Sharpe
             n_obs = len(y)
             synthetic_returns = np.random.default_rng(42).normal(
                 mean_sr * std_sr / np.sqrt(self.periods_per_year),
@@ -207,9 +180,7 @@ class StrategyValidator:
                 n_trials=self.n_trials,
             )
 
-        # 8. Backtest statistics (using CV returns as proxy)
-        # In production, real backtest returns would be passed in
-        # For now, use the fold Sharpes to compute basic stats
+        # Backtest statistics
         if report.purged_cv is not None:
             fold_returns = pd.Series(report.purged_cv.fold_sharpes)
             if len(fold_returns) >= 2:

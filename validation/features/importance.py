@@ -273,6 +273,7 @@ def compute_all_importance(
     embargo_pct: float = 0.01,
     periods_per_year: int = 252,
     random_state: int = 42,
+    skip_sfi: bool = False,
 ) -> FeatureImportanceResult:
     """Run all feature importance methods and detect overfit features.
 
@@ -281,13 +282,17 @@ def compute_all_importance(
         sample_weight: Optional sample weights.
         n_splits, embargo_pct, periods_per_year: CV parameters.
         random_state: For MDA shuffling.
+        skip_sfi: If True, skip SFI (slowest step). SFI ranking will have 0 Sharpe for all features.
 
     Returns:
         FeatureImportanceResult with MDI, MDA, SFI rankings and overfit detection.
     """
     mdi = compute_mdi(X, y, model, sample_weight)
     mda = compute_mda(X, y, model, tbm_timestamps, sample_weight, n_splits, embargo_pct, random_state)
-    sfi = compute_sfi(X, y, model, tbm_timestamps, sample_weight, n_splits, embargo_pct, periods_per_year)
+    if skip_sfi:
+        sfi = pd.DataFrame({"feature": X.columns, "sharpe": [0.0] * len(X.columns)})
+    else:
+        sfi = compute_sfi(X, y, model, tbm_timestamps, sample_weight, n_splits, embargo_pct, periods_per_year)
 
     overfit_features = detect_overfit_features(mdi, mda, sfi)
     n_features = len(X.columns)
