@@ -1,37 +1,49 @@
 {
-  "version": "v3",
-  "coins": [
-    "DOGEUSDT",
-    "DASHUSDT",
-    "BCHUSDT",
-    "ETHUSDT",
-    "ONTUSDT",
-    "ETCUSDT"
+  "version": "v4_final",
+  "alpha_coins": {
+    "tier1_strong": [
+      "DUSKUSDT",
+      "SUIUSDT",
+      "CHRUSDT",
+      "1000LUNCUSDT",
+      "THETAUSDT",
+      "DOGEUSDT"
+    ],
+    "tier2_solid": [
+      "CRVUSDT",
+      "DENTUSDT",
+      "DASHUSDT",
+      "AVAXUSDT",
+      "CHZUSDT",
+      "BCHUSDT"
+    ],
+    "tier3_moderate": [
+      "CTSIUSDT",
+      "ETHUSDT",
+      "ROSEUSD",
+      "ONTUSDT",
+      "ETCUSDT",
+      "1INCHUSDT"
+    ]
+  },
+  "no_alpha": [
+    "BTCUSDT",
+    "BNBUSDT",
+    "LTCUSDT",
+    "LINKUSDT",
+    "ADAUSDT",
+    "ATOMUSDT",
+    "ALGOUSDT"
   ],
   "model": {
     "expert_hidden": 256,
     "expert_output": 128,
     "fusion_dim": 256,
-    "dropout": 0.2,
-    "use_vsn": false
+    "dropout": 0.2
   },
-  "training": {
-    "epochs": 50,
-    "batch_size": 2048,
-    "rdrop_alpha": 1.0,
-    "patience": 7
-  },
-  "features": "base only (NO OI/funding/LS \u2014 proven harmful)",
-  "execution": {
-    "sma_period": 50,
-    "long_thresh": 0.4,
-    "short_thresh": 0.55,
-    "base_size": 0.03
-  },
-  "validated": {
-    "method": "OOS per-trade alpha at fee=0",
-    "portfolio_alpha": "+0.23%/trade (fee=0), +0.15%/trade (8bps)",
-    "estimated_annual": "~+19% after fees",
-    "btc_alpha": "NONE \u2014 do not trade BTC"
-  }
+  "features": "BASE ONLY \u2014 NO OI/Funding/LS (proven harmful)",
+  "avg_alpha_per_trade": "+0.42% (fee=0), +0.34% (8bps)",
+  "validation": "84 iterations, OOS per-trade alpha at fee=0",
+  "coins_scanned": "63/214",
+  "alpha_hit_rate": "18/63 = 29%"
 }
