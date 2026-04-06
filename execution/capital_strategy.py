@@ -35,8 +35,28 @@ class CapitalStrategy:
                 return s
         return self.STAGES[-1]
 
+    def leverage_for_coin(self, coin_volatility: float) -> float:
+        """Coin-specific leverage based on volatility.
+
+        Higher vol coins get lower leverage:
+          vol_ratio = coin_vol / BTC_vol
+          leverage = stage_leverage / vol_ratio
+
+        Args:
+            coin_volatility: coin's 24h realized volatility (e.g., 0.03 = 3%)
+
+        BTC ~2% daily vol → ratio 1.0 → full leverage
+        DOGE ~5% daily vol → ratio 2.5 → leverage/2.5
+        """
+        btc_baseline_vol = 0.02  # 2% daily
+        vol_ratio = max(coin_volatility / btc_baseline_vol, 0.5)  # floor at 0.5
+        base_lev = self.stage["leverage"]
+        adjusted = base_lev / vol_ratio
+        return max(1.0, min(adjusted, base_lev))  # clamp to [1, stage_max]
+
     @property
     def leverage(self) -> float:
+        """Default leverage (BTC-level volatility assumed)."""
         return self.stage["leverage"]
 
     @property
