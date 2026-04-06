@@ -111,6 +111,20 @@ def build_features(kline, extras, target_tf="15min"):
         features["funding_zscore_672"] = (fr - fr.rolling(672).mean()) / fr.rolling(672).std().replace(0, np.nan)
         features["funding_extreme_95"] = (fr.abs() > fr.abs().rolling(672).quantile(0.95)).astype(float)
 
+    # LS ratio contrarian features (verified alpha: +0.435%/day spread)
+    if "metrics" in extras:
+        for col_name, feat_prefix in [
+            ("count_long_short_ratio", "ls"),
+            ("count_toptrader_long_short_ratio", "topls"),
+        ]:
+            if col_name in extras["metrics"].columns:
+                ls = extras["metrics"][col_name].resample("15min").last().ffill()
+                ls = ls.reindex(features.index, method="ffill")
+                for lb in [48, 96, 192]:
+                    features[f"{feat_prefix}_chg_{lb}"] = ls.pct_change(lb)
+                features[f"{feat_prefix}_extreme_high"] = (ls > ls.rolling(672).quantile(0.95)).astype(float)
+                features[f"{feat_prefix}_extreme_low"] = (ls < ls.rolling(672).quantile(0.05)).astype(float)
+
     features = features.dropna().replace([np.inf, -np.inf], np.nan).fillna(0)
 
     return features
