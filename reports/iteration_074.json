@@ -1,0 +1,83 @@
+{
+  "iteration": 74,
+  "results": {
+    "BTCUSDT": {
+      "return": 69.23,
+      "bh": 52.8,
+      "trades": 12594,
+      "excess": 16.4
+    },
+    "ETHUSDT": {
+      "return": -14.7,
+      "bh": 91.8,
+      "trades": 6390,
+      "excess": -106.5
+    },
+    "BCHUSDT": {
+      "return": 90.82,
+      "bh": 57.9,
+      "trades": 12594,
+      "excess": 32.9
+    },
+    "ETCUSDT": {
+      "return": 14.35,
+      "bh": -41.3,
+      "trades": 12594,
+      "excess": 55.6
+    },
+    "LINKUSDT": {
+      "return": 62.41,
+      "bh": 3.3,
+      "trades": 12594,
+      "excess": 59.1
+    },
+    "ADAUSDT": {
+      "return": 2.5,
+      "bh": 12.9,
+      "trades": 12594,
+      "excess": -10.4
+    },
+    "DASHUSDT": {
+      "return": 0.15,
+      "bh": 103.1,
+      "trades": 12594,
+      "excess": -103.0
+    },
+    "ATOMUSDT": {
+      "return": 147.48,
+      "bh": -65.3,
+      "trades": 12594,
+      "excess": 212.8
+    },
+    "BNBUSDT": {
+      "return": 27.34,
+      "bh": 58.0,
+      "trades": 12594,
+      "excess": -30.7
+    },
+    "ONTUSDT": {
+      "return": 141.35,
+      "bh": -64.4,
+      "trades": 12594,
+      "excess": 205.8
+    },
+    "BATUSDT": {
+      "return": 41.86,
+      "bh": 43.7,
+      "trades": 12594,
+      "excess": -1.8
+    },
+    "ALGOUSDT": {
+      "return": 15.08,
+      "bh": -4.0,
+      "trades": 12502,
+      "excess": 19.1
+    },
+    "DOGEUSDT": {
+      "return": -10.67,
+      "bh": 41.3,
+      "trades": 12358,
+      "excess": -52.0
+    }
+  }
+}
