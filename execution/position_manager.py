@@ -167,6 +167,18 @@ class PositionManager:
             if pos.bars_held >= pos.hold_limit:
                 to_close.append((slot_id, current_price, "timeout"))
 
+            # Hard stop: close if position loss exceeds threshold
+            if pos.unrealized_pnl < -0.05:  # -5% of equity per position
+                to_close.append((slot_id, current_price, "hard_stop"))
+
+        # Check portfolio-level DD hard stop
+        dd = (self.peak_equity - self.equity) / self.peak_equity if self.peak_equity > 0 else 0
+        if dd >= self.max_drawdown:
+            for slot_id in list(self.positions.keys()):
+                if slot_id not in [t[0] for t in to_close]:
+                    price = prices.get(self.positions[slot_id].asset, self.positions[slot_id].entry_price)
+                    to_close.append((slot_id, price, "dd_stop"))
+
         for slot_id, price, reason in to_close:
             self.close_position(slot_id, price, reason, bar_idx)
 
