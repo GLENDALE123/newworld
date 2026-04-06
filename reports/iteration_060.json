@@ -1,0 +1,5 @@
+{
+  "iteration": 60,
+  "approach": "Multi-coin pre-training + BTC fine-tune",
+  "time": 368
+}

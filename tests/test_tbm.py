@@ -21,7 +21,7 @@ def _make_ohlcv(closes: list[float], base_ts: str = "2021-01-01") -> pd.DataFram
 def test_compute_volatility():
     labeler = TripleBarrierLabeler()
     closes = pd.Series([100.0] * 30 + [110.0])
-    vol = labeler.compute_volatility(closes, span=24)
+    vol = labeler.compute_volatility(closes)
     assert len(vol) == len(closes)
 
 
