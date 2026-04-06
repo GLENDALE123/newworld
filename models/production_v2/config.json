@@ -1,0 +1,29 @@
+{
+  "coins": [
+    "BTCUSDT",
+    "BCHUSDT",
+    "ONTUSDT",
+    "LINKUSDT",
+    "ATOMUSDT"
+  ],
+  "model": {
+    "expert_hidden": 256,
+    "expert_output": 128,
+    "fusion_dim": 256,
+    "dropout": 0.2
+  },
+  "training": {
+    "epochs": 50,
+    "batch_size": 2048,
+    "rdrop_alpha": 1.0,
+    "patience": 7
+  },
+  "execution": {
+    "sma_period": 50,
+    "long_thresh": 0.4,
+    "short_thresh": 0.55,
+    "base_size": 0.03
+  },
+  "walk_forward_mean": "+74%",
+  "oos_mean": "+32%"
+}
