@@ -1,0 +1,19 @@
+{
+  "version": "v5_final",
+  "coins": [
+    "UNIUSDT",
+    "DUSKUSDT",
+    "CHRUSDT",
+    "BCHUSDT",
+    "XRPUSDT"
+  ],
+  "verified_alpha": {
+    "UNI": "+0.80%",
+    "DUSK": "+0.52%",
+    "CHR": "+0.48%",
+    "BCH": "+0.24%",
+    "XRP": "+0.17%"
+  },
+  "features": "base only (NO OI)",
+  "iterations": 91
+}
