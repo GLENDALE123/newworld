@@ -103,8 +103,36 @@ HOLD_PERIODS = {
 
 DIRECTIONS = ["long", "short"]
 REGIMES = ["surge", "dump", "range", "volatile"]
+REGIMES_V3 = ["surge", "dump", "range", "volatile", "deleverage"]  # with OI divergence
 
 FEE_PCT = 0.0008  # 0.08% round trip
+
+
+def detect_oi_divergence(
+    close: pd.Series,
+    oi: pd.Series,
+    lookback: int = 96,  # 1 day at 15m
+    oi_threshold: float = 0.05,
+    price_threshold: float = 0.02,
+) -> np.ndarray:
+    """Detect OI-Price divergence regime.
+
+    deleverage_bull: OI↓ + Price↑ → trend likely continues (+0.71% next day)
+    deleverage_bear: OI↑ + Price↓ → shorts accumulating
+
+    Returns array of booleans (True = deleverage event).
+    """
+    oi_chg = oi.pct_change(lookback).values
+    price_chg = close.pct_change(lookback).values
+    n = len(close)
+
+    is_deleverage = np.zeros(n, dtype=bool)
+    # OI dropping + price rising = bullish deleverage
+    is_deleverage |= (oi_chg < -oi_threshold) & (price_chg > price_threshold)
+    # OI rising + price dropping = bearish leverage buildup
+    is_deleverage |= (oi_chg > oi_threshold) & (price_chg < -price_threshold)
+
+    return is_deleverage
 
 
 # ── Single Strategy TBM (numba) ───────────────────────────────────────────
