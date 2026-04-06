@@ -13,26 +13,28 @@ Each uses ATR at its OWN timeframe, not a global volatility.
 
 import numpy as np
 import pandas as pd
+from numba import njit
 
 
-# ── ATR Computation ─────────────────────────────────────────────────────────
+# ── ATR Computation (numba) ─────────────────────────────────────────────────
 
+@njit
 def compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray,
                 period: int = 14) -> np.ndarray:
-    """True Range → Exponential Moving Average = ATR."""
     n = len(close)
     tr = np.zeros(n)
     for i in range(1, n):
-        tr[i] = max(
-            high[i] - low[i],
-            abs(high[i] - close[i - 1]),
-            abs(low[i] - close[i - 1]),
-        )
-    # EMA of TR
-    atr = np.zeros(n)
-    atr[:period] = np.nan
+        hl = high[i] - low[i]
+        hc = abs(high[i] - close[i - 1])
+        lc = abs(low[i] - close[i - 1])
+        tr[i] = max(hl, max(hc, lc))
+    atr = np.empty(n)
+    atr[:] = np.nan
     if period < n:
-        atr[period] = np.mean(tr[1:period + 1])
+        s = 0.0
+        for i in range(1, period + 1):
+            s += tr[i]
+        atr[period] = s / period
         alpha = 2.0 / (period + 1)
         for i in range(period + 1, n):
             atr[i] = alpha * tr[i] + (1 - alpha) * atr[i - 1]
@@ -42,28 +44,24 @@ def compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray,
 # ── Regime Detection ────────────────────────────────────────────────────────
 
 def detect_regimes(close: pd.Series, atr: np.ndarray, window: int = 24) -> np.ndarray:
-    """Classify each bar: surge, dump, range, volatile."""
+    """Classify each bar: surge, dump, range, volatile. Fully vectorized."""
     n = len(close)
     closes = close.values
     ret = np.zeros(n)
     ret[window:] = (closes[window:] - closes[:-window]) / closes[:-window]
 
-    vol = pd.Series(atr).rolling(window).mean().values
-    vol_p50 = pd.Series(atr).rolling(window * 4).median().values
-    vol_p90 = pd.Series(atr).rolling(window * 4).quantile(0.9).values
-
+    atr_s = pd.Series(atr)
+    vol = atr_s.rolling(window).mean().values
+    vol_p90 = atr_s.rolling(window * 4).quantile(0.9).values
     ret_std = pd.Series(ret).rolling(window * 4).std().values
 
+    valid = ~(np.isnan(vol_p90) | np.isnan(ret_std))
     regime = np.full(n, "range", dtype=object)
-    for i in range(n):
-        if np.isnan(vol_p90[i]) or np.isnan(ret_std[i]):
-            continue
-        if vol[i] > vol_p90[i]:
-            regime[i] = "volatile"
-        elif ret[i] > ret_std[i]:
-            regime[i] = "surge"
-        elif ret[i] < -ret_std[i]:
-            regime[i] = "dump"
+    regime[valid & (vol > vol_p90)] = "volatile"
+    # surge/dump only where not already volatile
+    not_vol = valid & (vol <= vol_p90)
+    regime[not_vol & (ret > ret_std)] = "surge"
+    regime[not_vol & (ret < -ret_std)] = "dump"
     return regime
 
 
@@ -96,7 +94,6 @@ STRATEGIES = {
     },
 }
 
-# Max holding periods per strategy
 HOLD_PERIODS = {
     "scalp": 3,       # 3 bars × 5m  = 15 min
     "intraday": 4,    # 4 bars × 15m = 1 hour
@@ -110,8 +107,9 @@ REGIMES = ["surge", "dump", "range", "volatile"]
 FEE_PCT = 0.0008  # 0.08% round trip
 
 
-# ── Single Strategy TBM ────────────────────────────────────────────────────
+# ── Single Strategy TBM (numba) ───────────────────────────────────────────
 
+@njit
 def _compute_strategy_tbm(
     highs: np.ndarray,
     lows: np.ndarray,
@@ -121,20 +119,19 @@ def _compute_strategy_tbm(
     sl_mult: float,
     max_hold: int,
     direction: int,
-    fee_pct: float = FEE_PCT,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute TBM + MAE + MFE + fee-adjusted RAR + sample weight.
-
-    Sample weight = magnitude_weight × speed_weight
-      magnitude: how much beyond TP (rewards large wins)
-      speed: how fast barrier was hit (rewards fast signals)
-    """
+    fee_pct: float,
+) -> tuple:
     n = len(closes)
-    tbm = np.full(n, np.nan)
-    mae = np.full(n, np.nan)
-    mfe = np.full(n, np.nan)
-    rar = np.full(n, np.nan)
-    weight = np.full(n, np.nan)
+    tbm = np.empty(n)
+    mae = np.empty(n)
+    mfe = np.empty(n)
+    rar = np.empty(n)
+    weight = np.empty(n)
+    tbm[:] = np.nan
+    mae[:] = np.nan
+    mfe[:] = np.nan
+    rar[:] = np.nan
+    weight[:] = np.nan
 
     for i in range(n - 1):
         entry = closes[i]
@@ -153,32 +150,50 @@ def _compute_strategy_tbm(
         if end <= i:
             continue
 
-        path_h = highs[i + 1:end + 1]
-        path_l = lows[i + 1:end + 1]
+        # MFE / MAE over the path
+        path_h_max = highs[i + 1]
+        path_l_min = lows[i + 1]
+        for j in range(i + 2, end + 1):
+            if highs[j] > path_h_max:
+                path_h_max = highs[j]
+            if lows[j] < path_l_min:
+                path_l_min = lows[j]
 
         if direction == 1:
-            mfe_val = (path_h.max() - entry) / entry
-            mae_val = (path_l.min() - entry) / entry
+            mfe_val = (path_h_max - entry) / entry
+            mae_val = (path_l_min - entry) / entry
         else:
-            mfe_val = (entry - path_l.min()) / entry
-            mae_val = (entry - path_h.max()) / entry
+            mfe_val = (entry - path_l_min) / entry
+            mae_val = (entry - path_h_max) / entry
 
         hit = np.nan
         exit_price = closes[end]
-        bars_to_hit = max_hold  # default: full hold
+        bars_to_hit = max_hold
 
         if direction == 1:
             for j in range(i + 1, end + 1):
                 if highs[j] >= upper:
-                    hit = 1.0; exit_price = upper; bars_to_hit = j - i; break
+                    hit = 1.0
+                    exit_price = upper
+                    bars_to_hit = j - i
+                    break
                 if lows[j] <= lower:
-                    hit = -1.0; exit_price = lower; bars_to_hit = j - i; break
+                    hit = -1.0
+                    exit_price = lower
+                    bars_to_hit = j - i
+                    break
         else:
             for j in range(i + 1, end + 1):
                 if lows[j] <= lower:
-                    hit = 1.0; exit_price = lower; bars_to_hit = j - i; break
+                    hit = 1.0
+                    exit_price = lower
+                    bars_to_hit = j - i
+                    break
                 if highs[j] >= upper:
-                    hit = -1.0; exit_price = upper; bars_to_hit = j - i; break
+                    hit = -1.0
+                    exit_price = upper
+                    bars_to_hit = j - i
+                    break
 
         if np.isnan(hit):
             if direction == 1:
@@ -197,21 +212,16 @@ def _compute_strategy_tbm(
         sigma = a / entry
         rar_val = net / sigma if sigma > 0 else 0.0
 
-        # Sample weight: magnitude × speed
-        # Magnitude: |net_return| / (tp_mult * sigma) → how far beyond minimum
         magnitude_w = abs(net) / max(tp_mult * sigma, 1e-8)
-
-        # Speed: (max_hold - bars_to_hit) / max_hold → 1.0 if instant, 0.0 if timeout
         speed_w = (max_hold - bars_to_hit) / max_hold
+        mag_clamp = magnitude_w if magnitude_w > 0 else 0.0
+        spd_clamp = speed_w if speed_w > 0 else 0.0
+        sample_w = np.sqrt(mag_clamp * spd_clamp)
 
-        # Combined: sqrt(magnitude * speed) — geometric mean
-        sample_w = np.sqrt(max(magnitude_w, 0) * max(speed_w, 0))
-
-        # Winners get positive weight, losers get base weight (still learn from losses)
         if hit == 1.0 and net > 0:
-            sample_w = 1.0 + sample_w  # boost winners
+            sample_w = 1.0 + sample_w
         else:
-            sample_w = 1.0  # base weight for losses
+            sample_w = 1.0
 
         tbm[i] = hit
         mae[i] = mae_val
@@ -237,11 +247,9 @@ def generate_multi_tbm_v2(
         progress: Print progress
 
     Returns:
-        DataFrame indexed by finest available timeframe with 96 label columns:
-        3 strategies × 2 directions × 4 regimes × 4 types (tbm/mae/mfe/rar)
+        Dict of DataFrames per strategy timeframe with label columns.
     """
     label_matrix = {}
-    n_combos = len(STRATEGIES) * len(DIRECTIONS) * len(REGIMES)
     done = 0
 
     for strat_name, strat_cfg in STRATEGIES.items():
@@ -262,7 +270,6 @@ def generate_multi_tbm_v2(
         atr = compute_atr(h, l, c, period=strat_cfg["atr_period"])
         max_hold = HOLD_PERIODS[strat_name]
 
-        # Regime detection using this timeframe's data
         regimes = detect_regimes(df["close"], atr, window=max(24, max_hold))
 
         if progress:
@@ -309,8 +316,6 @@ def generate_multi_tbm_v2(
             print(f"    TBM: +1={pos} -1={neg} ({pos/max(total,1)*100:.1f}% win)")
             print(f"    RAR>0 (after fees): {pct_positive:.1f}%")
 
-    # Build result per strategy's own timeframe
-    # For now, return per-strategy DataFrames keyed by source_tf
     results = {}
     for strat_name, strat_cfg in STRATEGIES.items():
         source_tf = strat_cfg["source_tf"]

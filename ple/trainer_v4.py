@@ -59,8 +59,23 @@ def prepare_data_v4(features_df, labels_df, train_ratio=0.6, val_ratio=0.2):
     return ds(0, s1), ds(s1, s2), ds(s2, n), partitions
 
 
+def _kl_binary(p1, p2, mask):
+    """Symmetric KL divergence for binary probabilities (R-Drop)."""
+    eps = 1e-7
+    p1, p2 = p1.clamp(eps, 1 - eps), p2.clamp(eps, 1 - eps)
+    kl_1 = p1 * (p1.log() - p2.log()) + (1 - p1) * ((1 - p1).log() - (1 - p2).log())
+    kl_2 = p2 * (p2.log() - p1.log()) + (1 - p2) * ((1 - p2).log() - (1 - p1).log())
+    return ((kl_1 + kl_2) / 2 * mask).sum() / mask.sum().clamp(1)
+
+
+def _worker_init(worker_id):
+    """Seed each DataLoader worker deterministically."""
+    info = torch.utils.data.get_worker_info()
+    np.random.seed(info.seed % (2**32))
+
+
 def train_ple_v4(model, train_ds, val_ds, epochs=50, batch_size=2048,
-                  lr=5e-4, device="cuda", patience=7):
+                  lr=5e-4, device="cuda", patience=7, rdrop_alpha=1.0, seed=42):
     model = model.to(device)
     loss_fn = PLEv4Loss(n_losses=4).to(device)
     optimizer = torch.optim.AdamW(
@@ -68,8 +83,15 @@ def train_ple_v4(model, train_ds, val_ds, epochs=50, batch_size=2048,
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, max_lr=lr, total_steps=epochs * (len(train_ds) // batch_size + 1))
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=12,
+                              pin_memory=True, persistent_workers=True,
+                              generator=g, worker_init_fn=_worker_init)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=4,
+                            pin_memory=True, persistent_workers=True,
+                            worker_init_fn=_worker_init)
 
     best_val = float("inf")
     no_improve = 0
@@ -88,10 +110,21 @@ def train_ple_v4(model, train_ds, val_ds, epochs=50, batch_size=2048,
                     if isinstance(batch[k], torch.Tensor) and batch[k].dtype == torch.float32:
                         batch[k] = lam * batch[k] + (1 - lam) * batch[k][idx]
 
-            out = model(batch["features"], batch["account"])
-            losses = loss_fn(out, batch)
+            # R-Drop: two forward passes, enforce consistency via KL divergence
+            if rdrop_alpha > 0:
+                out1 = model(batch["features"], batch["account"])
+                out2 = model(batch["features"], batch["account"])
+                l1, l2 = loss_fn(out1, batch), loss_fn(out2, batch)
+                task_loss = (l1["total"] + l2["total"]) / 2
+                rdrop_loss = _kl_binary(out1["label_probs"], out2["label_probs"], batch["rar_mask"])
+                total = task_loss + rdrop_alpha * rdrop_loss
+            else:
+                out1 = model(batch["features"], batch["account"])
+                losses = loss_fn(out1, batch)
+                total = losses["total"]
+
             optimizer.zero_grad()
-            losses["total"].backward()
+            total.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()

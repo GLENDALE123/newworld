@@ -57,13 +57,12 @@ def fracdiff(
     weights = _compute_weights(d, threshold)
     window = len(weights)
     values = series.values.astype(np.float64)
-    n = len(values)
 
-    result = np.full(n, np.nan)
-    for t in range(window - 1, n):
-        result[t] = np.dot(weights, values[t - window + 1:t + 1][::-1])
+    # Vectorized convolution instead of python loop
+    conv = np.convolve(values, weights, mode="full")[:len(values)]
+    conv[:window - 1] = np.nan
 
-    return pd.Series(result, index=series.index, name=series.name)
+    return pd.Series(conv, index=series.index, name=series.name)
 
 
 def find_optimal_d(

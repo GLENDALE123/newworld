@@ -1,0 +1,14 @@
+{
+  "iteration": 48,
+  "approach": "Multi-TF consensus exit (5m+15m)",
+  "baseline_return": 18.42,
+  "multitf_return": -1.58,
+  "improvement": -20.0,
+  "n_trades": 1527,
+  "exit_reasons": {
+    "multitf_reversal": 282,
+    "stop_loss": 1242,
+    "timeout": 3
+  },
+  "time": 74
+}

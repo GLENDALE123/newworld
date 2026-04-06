@@ -1,0 +1,39 @@
+{
+  "iteration": 43,
+  "approach": "Validate top configs with fixed backtest",
+  "results": {
+    "e128_o64_f192": {
+      "overall": 47.26,
+      "std": 4.43,
+      "params": 285761,
+      "seed_means": {
+        "42": 41.5,
+        "123": 52.26,
+        "777": 48.03
+      }
+    },
+    "e128_o96_f192": {
+      "overall": 31.78,
+      "std": 15.07,
+      "params": 336353,
+      "seed_means": {
+        "42": 15.68,
+        "123": 27.72,
+        "777": 51.93
+      }
+    },
+    "e192_o64_f192": {
+      "overall": 23.07,
+      "std": 10.01,
+      "params": 384321,
+      "seed_means": {
+        "42": 8.93,
+        "123": 29.68,
+        "777": 30.6
+      }
+    }
+  },
+  "best": "e128_o64_f192",
+  "mean": 47.26,
+  "time_seconds": 1910
+}

@@ -1,0 +1,27 @@
+{
+  "iteration": 53,
+  "approach": "Feature importance + pruning",
+  "top20_features": [
+    "deriv_taker_ratio",
+    "deriv_taker_ratio_zscore_5",
+    "deriv_taker_ratio_zscore_20",
+    "deriv_taker_ratio_zscore_100",
+    "deriv_taker_ratio_chg_10",
+    "deriv_taker_ratio_chg_50",
+    "deriv_taker_ratio_chg_20",
+    "deriv_taker_ratio_chg_5",
+    "deriv_taker_ratio_zscore_10",
+    "deriv_taker_ratio_chg_100",
+    "deriv_taker_ratio_zscore_50",
+    "flow_cvd_chg_100_lag4",
+    "flow_cvd_chg_50_lag6",
+    "flow_cvd_chg_10_lag5",
+    "flow_cvd_chg_100_lag1",
+    "flow_cvd_chg_100_lag7",
+    "flow_buy_ratio_10",
+    "flow_cvd_chg_100_lag5",
+    "flow_cvd_chg_20_lag3",
+    "flow_cvd_chg_20_lag4"
+  ],
+  "time": 1649
+}

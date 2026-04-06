@@ -1,0 +1,5 @@
+{
+  "iteration": 41,
+  "approach": "Label smoothing + fusion dim sweep",
+  "time_seconds": 1984
+}

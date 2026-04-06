@@ -1,0 +1,81 @@
+{
+  "iteration": 33,
+  "approach": "Full-history (15m\u21921h resample, 2020-2026) + SWA (Stochastic Weight Averaging)",
+  "data_range": "2020-06-01 to 2026-02-28",
+  "windows_swa": [
+    42.95,
+    -1.64,
+    17.49
+  ],
+  "windows_std": [
+    57.8,
+    -4.16,
+    16.65
+  ],
+  "mean_swa": 19.6,
+  "mean_std": 23.43,
+  "improvement": -3.83,
+  "details": [
+    {
+      "window": 1,
+      "swa": {
+        "return": 42.95,
+        "bh": 88.47,
+        "trades": 2556,
+        "wr": 52.9,
+        "n_long": 2047,
+        "n_short": 509
+      },
+      "standard": {
+        "return": 57.8,
+        "bh": 88.47,
+        "trades": 2556,
+        "wr": 53.2,
+        "n_long": 2178,
+        "n_short": 378
+      },
+      "period": "2024-08-08 18:15:00 to 2025-08-02 19:45:00"
+    },
+    {
+      "window": 2,
+      "swa": {
+        "return": -1.64,
+        "bh": -4.63,
+        "trades": 2556,
+        "wr": 47.5,
+        "n_long": 729,
+        "n_short": 1827
+      },
+      "standard": {
+        "return": -4.16,
+        "bh": -4.63,
+        "trades": 2556,
+        "wr": 48.2,
+        "n_long": 967,
+        "n_short": 1589
+      },
+      "period": "2024-12-16 18:45:00 to 2025-11-13 03:45:00"
+    },
+    {
+      "window": 3,
+      "swa": {
+        "return": 17.49,
+        "bh": 6.41,
+        "trades": 2131,
+        "wr": 51.5,
+        "n_long": 1757,
+        "n_short": 374
+      },
+      "standard": {
+        "return": 16.65,
+        "bh": 6.41,
+        "trades": 2131,
+        "wr": 51.3,
+        "n_long": 1773,
+        "n_short": 358
+      },
+      "period": "2025-04-09 19:15:00 to 2025-12-31 20:45:00"
+    }
+  ],
+  "time_seconds": 165
+}

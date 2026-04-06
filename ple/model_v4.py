@@ -1,16 +1,32 @@
 """
-PLE v4: Multi-Label with Independent Sigmoid Outputs
+PLE v4: Multi-Label with Independent Sigmoid Outputs + Variable Selection
 
-Key change from v3: softmax (pick one) → sigmoid (multiple simultaneous)
+Key changes:
+- softmax (pick one) → sigmoid (multiple simultaneous)
 - 128 independent binary classifiers: "is this strategy profitable NOW?"
-- Multiple strategies can fire simultaneously (scalp + swing at same time)
-- NO_TRADE emerges naturally when all 128 are below threshold
-- Feature-partitioned experts preserved from v3
+- Variable Selection Network (VSN) per partition: dynamically weights features
+- Feature-partitioned experts with attention-gated fusion
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+class VariableSelectionNetwork(nn.Module):
+    """Dynamically weights features per timestep (from TFT)."""
+    def __init__(self, n_features: int, hidden: int = 64):
+        super().__init__()
+        self.gate = nn.Sequential(
+            nn.Linear(n_features, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, n_features),
+        )
+        self.n_features = n_features
+
+    def forward(self, x):
+        weights = F.softmax(self.gate(x), dim=-1)
+        return x * weights * self.n_features
 
 
 class Expert(nn.Module):
@@ -47,11 +63,19 @@ class PLEv4(nn.Module):
         expert_hidden: int = 128,
         expert_output: int = 64,
         fusion_dim: int = 128,
-        dropout: float = 0.1,
+        dropout: float = 0.2,
+        use_vsn: bool = False,
     ):
         super().__init__()
         self.feature_partitions = feature_partitions
         self.n_strategies = n_strategies
+        self.use_vsn = use_vsn
+
+        # Variable Selection Networks (per partition)
+        if use_vsn:
+            self.vsns = nn.ModuleDict()
+            for name, indices in feature_partitions.items():
+                self.vsns[name] = VariableSelectionNetwork(len(indices), min(64, len(indices)))
 
         # Feature-partitioned experts
         self.experts = nn.ModuleDict()
@@ -120,7 +144,10 @@ class PLEv4(nn.Module):
         expert_outs = {}
         for name, indices in self.feature_partitions.items():
             idx = torch.tensor(indices, device=features.device)
-            expert_outs[name] = self.experts[name](features[:, idx])
+            x = features[:, idx]
+            if self.use_vsn:
+                x = self.vsns[name](x)
+            expert_outs[name] = self.experts[name](x)
 
         account_enc = self.account_encoder(account)
 

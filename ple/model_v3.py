@@ -21,7 +21,7 @@ def partition_features(feature_names: list[str]) -> dict[str, list[int]]:
     Returns dict mapping expert name -> list of feature column indices.
     """
     partitions = {
-        "price": [],    # price temporal features
+        "price": [],    # price temporal features (includes regime signals)
         "volume": [],   # volume/trade features
         "metrics": [],  # OI, funding, LS ratio
         "cross": [],    # cross-feature combinations

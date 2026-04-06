@@ -1,0 +1,11 @@
+{
+  "iteration": 52,
+  "approach": "Prob-based dynamic hold (BS=4096)",
+  "results": {
+    "fixed": 16.81,
+    "fixed1.5": 31.18,
+    "fixed2x": 49.28,
+    "prob_scaled": 31.41
+  },
+  "time": 429
+}

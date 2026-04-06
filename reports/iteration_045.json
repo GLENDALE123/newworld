@@ -1,0 +1,14 @@
+{
+  "iteration": 45,
+  "approach": "Precision entry evaluation (VWAP pullback + volume confirmation)",
+  "n_signals": 1539,
+  "avg_improvement_bps": 3.8,
+  "oracle_avg_bps": 15.7,
+  "positive_pct": 86.7,
+  "annual_impact_pct": 1.73,
+  "strategies": {
+    "vwap_pullback": "73.6%",
+    "volume_confirm": "20.9%",
+    "immediate": "5.5%"
+  }
+}

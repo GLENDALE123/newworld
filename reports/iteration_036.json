@@ -1,0 +1,112 @@
+{
+  "iteration": 36,
+  "approach": "R-Drop regularization + dropout tuning",
+  "data_range": "2020-06-01 to 2026-02-28",
+  "best_config": "rdrop_d02",
+  "configs": {
+    "rdrop_d02": {
+      "params": {
+        "dropout": 0.2,
+        "rdrop_alpha": 0.5
+      },
+      "seeds": {
+        "42": {
+          "windows": [
+            124.13,
+            7.92,
+            33.49
+          ],
+          "mean": 55.18
+        },
+        "123": {
+          "windows": [
+            50.92,
+            -6.28,
+            26.49
+          ],
+          "mean": 23.71
+        },
+        "777": {
+          "windows": [
+            77.97,
+            -2.3,
+            11.26
+          ],
+          "mean": 28.98
+        }
+      },
+      "overall_mean": 35.96,
+      "seed_std": 13.76
+    },
+    "rdrop_d01": {
+      "params": {
+        "dropout": 0.1,
+        "rdrop_alpha": 0.5
+      },
+      "seeds": {
+        "42": {
+          "windows": [
+            78.45,
+            3.8,
+            29.78
+          ],
+          "mean": 37.34
+        },
+        "123": {
+          "windows": [
+            -10.56,
+            -3.54,
+            9.58
+          ],
+          "mean": -1.51
+        },
+        "777": {
+          "windows": [
+            53.86,
+            -6.1,
+            14.54
+          ],
+          "mean": 20.77
+        }
+      },
+      "overall_mean": 18.87,
+      "seed_std": 15.92
+    },
+    "baseline_d02": {
+      "params": {
+        "dropout": 0.2,
+        "rdrop_alpha": 0.0
+      },
+      "seeds": {
+        "42": {
+          "windows": [
+            122.63,
+            8.37,
+            32.0
+          ],
+          "mean": 54.33
+        },
+        "123": {
+          "windows": [
+            31.66,
+            -2.37,
+            23.86
+          ],
+          "mean": 17.72
+        },
+        "777": {
+          "windows": [
+            71.45,
+            -3.37,
+            13.93
+          ],
+          "mean": 27.34
+        }
+      },
+      "overall_mean": 33.13,
+      "seed_std": 15.5
+    }
+  },
+  "mean": 35.96,
+  "windows": "see per-seed results"
+}

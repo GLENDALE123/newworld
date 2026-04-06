@@ -1,0 +1,19 @@
+{
+  "iteration": 51,
+  "approach": "Improved confidence (continuous target) + dynamic hold",
+  "results": {
+    "fixed": {
+      "mean": 16.48,
+      "std": 14.92
+    },
+    "fixed2x": {
+      "mean": 46.53,
+      "std": 36.33
+    },
+    "conf_scaled": {
+      "mean": 39.57,
+      "std": 31.14
+    }
+  },
+  "time": 349
+}

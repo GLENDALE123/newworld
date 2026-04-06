@@ -1,0 +1,14 @@
+{
+  "iteration": 40,
+  "approach": "Multi-TF regime features (24 new: 4h trend + 1h momentum + 15m timing)",
+  "total_features": 406,
+  "regime_features": 24,
+  "seeds": {
+    "42": 16.28,
+    "123": 8.46,
+    "777": 2.04
+  },
+  "mean": 8.93,
+  "std": 5.82,
+  "time_seconds": 572
+}

@@ -1,0 +1,234 @@
+{
+  "iteration": 34,
+  "approach": "Regime-aware thresholds + confidence sizing + vol scaling",
+  "data_range": "2020-06-01 to 2026-02-28",
+  "best_config": "baseline_033",
+  "configs": {
+    "baseline_033": {
+      "windows": [
+        64.07,
+        3.44,
+        11.57
+      ],
+      "mean": 26.36,
+      "params": {
+        "min_prob": 0.4,
+        "min_ev": 0.0,
+        "cooldown": 4,
+        "vol_scale": false,
+        "conf_sizing": false
+      },
+      "details": [
+        {
+          "return": 64.07,
+          "bh": 88.47,
+          "trades": 2556,
+          "wr": 53.7,
+          "n_long": 2215,
+          "n_short": 341,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 3.44,
+          "bh": -4.63,
+          "trades": 2556,
+          "wr": 48.9,
+          "n_long": 640,
+          "n_short": 1916,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 11.57,
+          "bh": 6.41,
+          "trades": 2131,
+          "wr": 51.1,
+          "n_long": 1645,
+          "n_short": 486,
+          "avg_conf": 0.993
+        }
+      ]
+    },
+    "higher_thresh": {
+      "windows": [
+        64.07,
+        3.44,
+        11.57
+      ],
+      "mean": 26.36,
+      "params": {
+        "min_prob": 0.5,
+        "min_ev": 0.0005,
+        "cooldown": 4,
+        "vol_scale": false,
+        "conf_sizing": false
+      },
+      "details": [
+        {
+          "return": 64.07,
+          "bh": 88.47,
+          "trades": 2556,
+          "wr": 53.7,
+          "n_long": 2215,
+          "n_short": 341,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 3.44,
+          "bh": -4.63,
+          "trades": 2556,
+          "wr": 48.9,
+          "n_long": 640,
+          "n_short": 1916,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 11.57,
+          "bh": 6.41,
+          "trades": 2131,
+          "wr": 51.1,
+          "n_long": 1645,
+          "n_short": 486,
+          "avg_conf": 0.993
+        }
+      ]
+    },
+    "with_cooldown": {
+      "windows": [
+        29.51,
+        0.34,
+        3.72
+      ],
+      "mean": 11.19,
+      "params": {
+        "min_prob": 0.5,
+        "min_ev": 0.0005,
+        "cooldown": 8,
+        "vol_scale": false,
+        "conf_sizing": false
+      },
+      "details": [
+        {
+          "return": 29.51,
+          "bh": 88.47,
+          "trades": 1278,
+          "wr": 53.8,
+          "n_long": 1100,
+          "n_short": 178,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 0.34,
+          "bh": -4.63,
+          "trades": 1278,
+          "wr": 48.5,
+          "n_long": 312,
+          "n_short": 966,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 3.72,
+          "bh": 6.41,
+          "trades": 1066,
+          "wr": 50.8,
+          "n_long": 818,
+          "n_short": 248,
+          "avg_conf": 0.993
+        }
+      ]
+    },
+    "full_v2": {
+      "windows": [
+        46.39,
+        0.69,
+        7.11
+      ],
+      "mean": 18.06,
+      "params": {
+        "min_prob": 0.5,
+        "min_ev": 0.0005,
+        "cooldown": 8,
+        "vol_scale": true,
+        "conf_sizing": true
+      },
+      "details": [
+        {
+          "return": 46.39,
+          "bh": 88.47,
+          "trades": 1278,
+          "wr": 53.8,
+          "n_long": 1100,
+          "n_short": 178,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 0.69,
+          "bh": -4.63,
+          "trades": 1278,
+          "wr": 48.5,
+          "n_long": 312,
+          "n_short": 966,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 7.11,
+          "bh": 6.41,
+          "trades": 1066,
+          "wr": 50.8,
+          "n_long": 818,
+          "n_short": 248,
+          "avg_conf": 0.993
+        }
+      ]
+    },
+    "aggressive_filter": {
+      "windows": [
+        26.32,
+        -1.95,
+        4.9
+      ],
+      "mean": 9.76,
+      "params": {
+        "min_prob": 0.55,
+        "min_ev": 0.001,
+        "cooldown": 12,
+        "vol_scale": true,
+        "conf_sizing": true
+      },
+      "details": [
+        {
+          "return": 26.32,
+          "bh": 88.47,
+          "trades": 852,
+          "wr": 53.3,
+          "n_long": 735,
+          "n_short": 117,
+          "avg_conf": 0.995
+        },
+        {
+          "return": -1.95,
+          "bh": -4.63,
+          "trades": 852,
+          "wr": 46.2,
+          "n_long": 227,
+          "n_short": 625,
+          "avg_conf": 0.995
+        },
+        {
+          "return": 4.9,
+          "bh": 6.41,
+          "trades": 711,
+          "wr": 52.5,
+          "n_long": 545,
+          "n_short": 166,
+          "avg_conf": 0.993
+        }
+      ]
+    }
+  },
+  "windows": [
+    64.07,
+    3.44,
+    11.57
+  ],
+  "mean": 26.36
+}

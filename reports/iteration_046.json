@@ -1,0 +1,22 @@
+{
+  "iteration": 46,
+  "approach": "Grid entry (3 tranches) + Trailing TP",
+  "n_trades": 1527,
+  "returns": {
+    "baseline": 17.56,
+    "grid": 17.66,
+    "trailing": -3.21,
+    "combined": -3.21
+  },
+  "improvements": {
+    "grid": 0.1,
+    "trailing": -20.77,
+    "combined": -20.77
+  },
+  "exit_reasons": {
+    "trailing_tp": 771,
+    "stop_loss": 752,
+    "timeout": 4
+  },
+  "time_seconds": 59
+}

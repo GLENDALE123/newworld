@@ -10,9 +10,10 @@ End-to-end pipeline for paper/live trading:
 5. Run inference with adaptive thresholds
 6. Execute via NautilusTrader (when connected)
 
-Best validated config (Iter 19/24):
-  Walk-forward mean: +10-11%
-  Bear market: +30%
+Best validated config (Iter 34, full-history):
+  Walk-forward mean: +26% (3 windows all positive)
+  Bull market: +64% (was -10% before full history)
+  Bear/sideways: +3-12%
   Fee-inclusive (0.08% round-trip)
 """
 
@@ -29,17 +30,36 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def load_data(data_dir: str = "data/merged/BTCUSDT", start: str = "2024-04-01", end: str = "2026-02-28"):
-    """Load all available data for a symbol."""
+def load_data(data_dir: str = "data/merged/BTCUSDT", start: str = "2020-06-01", end: str = "2026-02-28"):
+    """Load all available data for a symbol.
+
+    Uses 15m→1h resampling to unlock full 2020-2026 history when native 1h
+    data has limited coverage. This solved the bull market bias (iter 33).
+    """
     kline = {}
-    for tf in ["5m", "15m", "1h"]:
+    for tf in ["5m", "15m"]:
         path = os.path.join(data_dir, f"kline_{tf}.parquet")
         if os.path.exists(path):
             kline[tf] = pd.read_parquet(path).set_index("timestamp").sort_index()[start:end]
 
-    kline["4h"] = kline["1h"].resample("4h").agg(
-        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
-    ).dropna()
+    # 1h: resample from 15m for full history coverage
+    native_1h_path = os.path.join(data_dir, "kline_1h.parquet")
+    native_1h = pd.DataFrame()
+    if os.path.exists(native_1h_path):
+        native_1h = pd.read_parquet(native_1h_path).set_index("timestamp").sort_index()[start:end]
+
+    if "15m" in kline:
+        resampled_1h = kline["15m"].resample("1h").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+        ).dropna()
+        kline["1h"] = resampled_1h if len(resampled_1h) > len(native_1h) else native_1h
+    elif len(native_1h) > 0:
+        kline["1h"] = native_1h
+
+    if "1h" in kline:
+        kline["4h"] = kline["1h"].resample("4h").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+        ).dropna()
 
     # Optional data sources
     extras = {}
@@ -134,8 +154,8 @@ def train_model(X, L, partitions, train_ratio=0.5, val_ratio=0.25, seed=42):
         n_strategies=len(tbm_cols),
         expert_hidden=128,
         expert_output=64,
-        fusion_dim=128,
-        dropout=0.1,
+        fusion_dim=192,
+        dropout=0.2,
     )
 
     train_ple_v4(model, train_ds, val_ds, epochs=50, batch_size=2048,
@@ -203,6 +223,7 @@ def main():
             probs = out["label_probs"].cpu().numpy()
             mfe_p = out["mfe_pred"].cpu().numpy()
             mae_p = out["mae_pred"].cpu().numpy()
+            confidence = out["confidence"].cpu().numpy()
 
         # SMA
         close = kline["15m"]["close"]
@@ -238,7 +259,10 @@ def main():
                 continue
 
             d = 1 if strat_info[best_j]["dir"] == "long" else -1
-            hold = {"intraday": 4, "swing": 168}.get(strat_info[best_j]["style"], 12)
+            base_hold = {"scalp": 1, "intraday": 4, "daytrade": 48, "swing": 168}.get(strat_info[best_j]["style"], 12)
+            # Confidence-scaled hold: strong signal → hold longer
+            hold_mult = max(0.5, min(2.0, confidence[i] * 2))
+            hold = int(base_hold * hold_mult)
             ei = min(i + hold, n - 1)
             pnl = d * (tc[ei] - tc[i]) / tc[i]
             net = pnl - args.fee

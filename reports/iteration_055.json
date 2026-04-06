@@ -1,0 +1,5 @@
+{
+  "iteration": 55,
+  "approach": "FracDiff + FFT + Cross-Asset features",
+  "time": 1417
+}

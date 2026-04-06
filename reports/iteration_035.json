@@ -1,0 +1,64 @@
+{
+  "iteration": 35,
+  "approach": "Multi-seed ensemble (3 seeds: [42, 123, 777])",
+  "data_range": "2020-06-01 to 2026-02-28",
+  "windows": [
+    18.39,
+    7.6,
+    19.62
+  ],
+  "mean": 15.2,
+  "single_seed_results": {
+    "42": {
+      "windows": [
+        66.5,
+        6.92,
+        26.47
+      ],
+      "mean": 33.3
+    },
+    "123": {
+      "windows": [
+        -13.03,
+        -2.5,
+        9.05
+      ],
+      "mean": -2.16
+    },
+    "777": {
+      "windows": [
+        54.47,
+        -5.1,
+        7.99
+      ],
+      "mean": 19.12
+    }
+  },
+  "ensemble_details": [
+    {
+      "return": 18.39,
+      "bh": 88.47,
+      "trades": 2556,
+      "wr": 51.4,
+      "n_long": 1929,
+      "n_short": 627
+    },
+    {
+      "return": 7.6,
+      "bh": -4.63,
+      "trades": 2556,
+      "wr": 51.2,
+      "n_long": 1803,
+      "n_short": 753
+    },
+    {
+      "return": 19.62,
+      "bh": 6.41,
+      "trades": 2131,
+      "wr": 52.8,
+      "n_long": 1701,
+      "n_short": 430
+    }
+  ],
+  "time_seconds": 345
+}

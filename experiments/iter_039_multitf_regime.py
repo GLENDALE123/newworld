@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""
+Iteration 039: Multi-TF Regime Features + High-Confidence Scalp
+
+Two improvements:
+  1. Multi-TF Regime Features (해상도를 올리면서 레짐 파악):
+     - 4h: macro trend (SMA200 position, slope, ADX)
+     - 1h: momentum direction (SMA50 position, RSI regime)
+     - 15m: entry timing (mean reversion, breakout, momentum)
+     These become explicit features the model can use.
+
+  2. The model already handles scalp well (iter 038) — keep 32 strategies.
+
+Using: d=0.20, α=1.0, full history 2020-2026.
+"""
+
+import os, sys, json, time
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
+
+import warnings
+warnings.filterwarnings("ignore")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ple.model_v4 import PLEv4
+from ple.loss_v4 import PLEv4Loss
+from ple.trainer_v4 import TradingDatasetV4, _kl_binary
+from ple.model_v3 import partition_features
+from features.factory_v2 import generate_features_v2
+from labeling.multi_tbm_v2 import generate_multi_tbm_v2
+
+
+def load_data_full(data_dir="data/merged/BTCUSDT", start="2020-06-01", end="2026-02-28"):
+    kline = {}
+    for tf in ["5m", "15m"]:
+        path = os.path.join(data_dir, f"kline_{tf}.parquet")
+        if os.path.exists(path):
+            kline[tf] = pd.read_parquet(path).set_index("timestamp").sort_index()[start:end]
+    if "15m" in kline:
+        kline["1h"] = kline["15m"].resample("1h").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+    if "1h" in kline:
+        kline["4h"] = kline["1h"].resample("4h").agg(
+            {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+    extras = {}
+    for name in ["tick_bar", "metrics", "funding_rate"]:
+        path = os.path.join(data_dir, f"{name}.parquet")
+        if os.path.exists(path):
+            extras[name] = pd.read_parquet(path).set_index("timestamp").sort_index()[start:end]
+    return kline, extras
+
+
+def build_multitf_regime_features(kline, target_tf="15min"):
+    """Build hierarchical regime features: 4h → 1h → 15m resolution."""
+    feats = {}
+
+    # ── 4h: Macro regime (trend direction + strength) ──
+    c4h = kline["4h"]["close"]
+    sma50_4h = c4h.rolling(50).mean()
+    sma200_4h = c4h.rolling(200).mean()
+
+    # Trend position: where is price relative to MAs
+    feats["regime_4h_above_sma50"] = (c4h > sma50_4h).astype(float)
+    feats["regime_4h_above_sma200"] = (c4h > sma200_4h).astype(float)
+    feats["regime_4h_sma50_slope"] = sma50_4h.pct_change(5)  # 5-bar slope
+    feats["regime_4h_sma200_slope"] = sma200_4h.pct_change(10)
+
+    # Golden/death cross signal
+    feats["regime_4h_golden"] = (sma50_4h > sma200_4h).astype(float)
+
+    # Trend strength: distance from SMA as % of ATR
+    tr4h = pd.concat([kline["4h"]["high"] - kline["4h"]["low"],
+                       (kline["4h"]["high"] - c4h.shift()).abs(),
+                       (kline["4h"]["low"] - c4h.shift()).abs()], axis=1).max(axis=1)
+    atr4h = tr4h.ewm(span=14).mean()
+    feats["regime_4h_trend_strength"] = (c4h - sma50_4h) / atr4h.replace(0, np.nan)
+
+    # Volatility regime
+    ret4h = c4h.pct_change()
+    vol4h = ret4h.rolling(20).std()
+    vol4h_median = vol4h.rolling(100).median()
+    feats["regime_4h_vol_ratio"] = vol4h / vol4h_median.replace(0, np.nan)
+
+    # ── 1h: Momentum direction ──
+    c1h = kline["1h"]["close"]
+    sma20_1h = c1h.rolling(20).mean()
+    sma50_1h = c1h.rolling(50).mean()
+
+    feats["regime_1h_above_sma20"] = (c1h > sma20_1h).astype(float)
+    feats["regime_1h_above_sma50"] = (c1h > sma50_1h).astype(float)
+    feats["regime_1h_sma20_slope"] = sma20_1h.pct_change(3)
+
+    # RSI regime
+    delta = c1h.diff()
+    gain = delta.clip(lower=0).ewm(span=14).mean()
+    loss = (-delta.clip(upper=0)).ewm(span=14).mean()
+    rsi = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
+    feats["regime_1h_rsi"] = rsi / 100  # normalize to 0-1
+    feats["regime_1h_rsi_ob"] = (rsi > 70).astype(float)  # overbought
+    feats["regime_1h_rsi_os"] = (rsi < 30).astype(float)  # oversold
+
+    # Momentum: rate of change
+    feats["regime_1h_roc_12"] = c1h.pct_change(12)
+    feats["regime_1h_roc_24"] = c1h.pct_change(24)
+
+    # ── 15m: Entry timing signals ──
+    c15 = kline["15m"]["close"]
+    sma20_15 = c15.rolling(20).mean()
+
+    # Mean reversion signal: distance from SMA in std devs
+    ret15 = c15.pct_change()
+    std15 = ret15.rolling(50).std()
+    feats["regime_15m_zscore"] = (c15 - sma20_15) / (std15 * c15).replace(0, np.nan)
+
+    # Breakout: new high/low within lookback
+    feats["regime_15m_new_high_20"] = (c15 >= c15.rolling(20).max()).astype(float)
+    feats["regime_15m_new_low_20"] = (c15 <= c15.rolling(20).min()).astype(float)
+    feats["regime_15m_new_high_50"] = (c15 >= c15.rolling(50).max()).astype(float)
+    feats["regime_15m_new_low_50"] = (c15 <= c15.rolling(50).min()).astype(float)
+
+    # Momentum acceleration
+    feats["regime_15m_mom_4"] = c15.pct_change(4)
+    feats["regime_15m_mom_12"] = c15.pct_change(12)
+    feats["regime_15m_mom_accel"] = c15.pct_change(4) - c15.pct_change(4).shift(4)
+
+    # Volume surge at 15m level
+    v15 = kline["15m"]["volume"]
+    feats["regime_15m_vol_surge"] = v15 / v15.rolling(20).mean().replace(0, np.nan)
+
+    # ── Align all to 15m target_tf ──
+    result = pd.DataFrame(index=kline["15m"].index)
+    for name, series in feats.items():
+        result[name] = series.resample(target_tf).ffill().reindex(result.index, method="ffill")
+
+    return result.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+
+def train_rdrop(model, train_ds, val_ds, epochs=50, batch_size=2048,
+                lr=5e-4, device="cuda", patience=7, rdrop_alpha=1.0):
+    model = model.to(device)
+    loss_fn = PLEv4Loss(n_losses=4).to(device)
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(loss_fn.parameters()), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=lr, total_steps=epochs * (len(train_ds) // batch_size + 1))
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
+
+    best_val, no_improve, best_state = float("inf"), 0, None
+    for epoch in range(epochs):
+        model.train()
+        for batch in train_loader:
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            if np.random.random() < 0.5:
+                lam = np.random.beta(0.2, 0.2)
+                idx = torch.randperm(batch["features"].size(0), device=device)
+                for k in batch:
+                    if isinstance(batch[k], torch.Tensor) and batch[k].dtype == torch.float32:
+                        batch[k] = lam * batch[k] + (1 - lam) * batch[k][idx]
+            out1 = model(batch["features"], batch["account"])
+            out2 = model(batch["features"], batch["account"])
+            l1, l2 = loss_fn(out1, batch), loss_fn(out2, batch)
+            total = (l1["total"] + l2["total"]) / 2 + rdrop_alpha * _kl_binary(
+                out1["label_probs"], out2["label_probs"], batch["rar_mask"])
+            optimizer.zero_grad()
+            total.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            scheduler.step()
+
+        model.eval()
+        with torch.no_grad():
+            vm = []
+            for b in val_loader:
+                b = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in b.items()}
+                vm.append(loss_fn(model(b["features"], b["account"]), b)["total"].item())
+            v = np.mean(vm)
+
+        if v < best_val:
+            best_val, no_improve = v, 0
+            best_state = {k: val.cpu().clone() for k, val in model.state_dict().items()}
+        else:
+            no_improve += 1
+            if no_improve >= patience: break
+
+    if best_state: model.load_state_dict(best_state)
+    return model
+
+
+def backtest_vec(model, X_test, kline_15m, kline_4h, strat_info, fee=0.0008, device="cuda"):
+    n = len(X_test)
+    if n < 100:
+        return {"return": 0.0, "trades": 0, "wr": 0.0, "bh": 0.0}
+    model = model.to(device).eval()
+    with torch.no_grad():
+        out = model(torch.tensor(X_test.values.astype(np.float32)).to(device),
+                    torch.zeros(n, 4).to(device))
+        probs = out["label_probs"].cpu().numpy()
+        mfe_p, mae_p = out["mfe_pred"].cpu().numpy(), out["mae_pred"].cpu().numpy()
+
+    S = len(strat_info)
+    tc = kline_15m["close"].reindex(X_test.index, method="ffill").values
+    sv = kline_4h["close"].rolling(50).mean().resample("15min").ffill().reindex(X_test.index, method="ffill").values
+    idx = np.arange(0, n - 1, 4); M = len(idx)
+    is_long = np.array([s["dir"] == "long" for s in strat_info])
+    holds = np.array([{"scalp": 1, "intraday": 4, "daytrade": 48, "swing": 168}.get(s["style"], 12) for s in strat_info])
+    dirs = np.where(is_long, 1.0, -1.0)
+    above = ~np.isnan(sv[idx]) & (tc[idx] > sv[idx])
+    thresh = np.where(is_long[None, :], np.where(above, 0.40, 0.55)[:, None], np.where(above, 0.55, 0.40)[:, None])
+    p = probs[idx]
+    ev = p * np.maximum(np.abs(mfe_p[idx]), 0.001) - (1 - p) * np.maximum(np.abs(mae_p[idx]), 0.001) - fee
+    valid = (p >= thresh) & (ev > 0)
+    ev_masked = np.where(valid, ev, -np.inf)
+    best_j = np.argmax(ev_masked, axis=1)
+    has_trade = ev_masked[np.arange(M), best_j] > 0
+    trade_idx, trade_j = idx[has_trade], best_j[has_trade]
+    T = len(trade_idx)
+    if T == 0:
+        return {"return": 0.0, "bh": round((tc[-1]-tc[0])/tc[0]*100, 2), "trades": 0, "wr": 0.0, "n_long": 0, "n_short": 0}
+    exit_idx = np.minimum(trade_idx + holds[trade_j], n - 1)
+    net = dirs[trade_j] * (tc[exit_idx] - tc[trade_idx]) / tc[trade_idx] - fee
+    capital, peak = 100000.0, 100000.0
+    for i in range(T):
+        dd = (peak - capital) / peak if peak > 0 else 0
+        capital += net[i] * capital * 0.03 * max(0.2, 1 - dd / 0.15)
+        peak = max(peak, capital)
+    ret = (capital - 100000) / 100000 * 100
+    return {"return": round(ret, 2), "bh": round((tc[-1]-tc[0])/tc[0]*100, 2), "trades": T,
+            "wr": round((net > 0).mean() * 100, 1),
+            "n_long": int((dirs[trade_j] > 0).sum()), "n_short": int((dirs[trade_j] < 0).sum())}
+
+
+def main():
+    t0 = time.time()
+    print("=" * 60, flush=True)
+    print("  ITERATION 039: Multi-TF Regime Features", flush=True)
+    print("=" * 60, flush=True)
+
+    START, END = "2020-06-01", "2026-02-28"
+    SEEDS = [42, 123, 777]
+
+    print("\n[1/5] Loading data...", flush=True)
+    kline, extras = load_data_full(start=START, end=END)
+
+    print("\n[2/5] Building features...", flush=True)
+    # Base features
+    features = generate_features_v2(
+        kline_data=kline, tick_bar=extras.get("tick_bar"),
+        metrics=extras.get("metrics"), funding=extras.get("funding_rate"),
+        target_tf="15min", progress=False)
+
+    # Sequence features
+    top_feats = features.std().sort_values(ascending=False).head(30).index.tolist()
+    seq_cols = {}
+    for lag in range(1, 8):
+        for col in top_feats:
+            seq_cols[f"{col}_lag{lag}"] = features[col].shift(lag)
+    for col in top_feats[:10]:
+        for lag in [1, 2, 4]:
+            seq_cols[f"{col}_chg{lag}"] = features[col] - features[col].shift(lag)
+    features = pd.concat([features, pd.DataFrame(seq_cols, index=features.index)], axis=1)
+
+    # NEW: Multi-TF regime features
+    regime_features = build_multitf_regime_features(kline, target_tf="15min")
+    n_regime = regime_features.shape[1]
+    features = pd.concat([features, regime_features], axis=1)
+    features = features.dropna().replace([np.inf, -np.inf], np.nan).fillna(0)
+    print(f"  Base features + {n_regime} regime features = {features.shape[1]} total", flush=True)
+
+    print("\n[3/5] Building labels...", flush=True)
+    lr = generate_multi_tbm_v2(kline, fee_pct=0.0008, progress=False)
+    labels = lr["intraday"].copy()
+    for name in ["scalp", "daytrade", "swing"]:
+        if name in lr:
+            sw = lr[name].resample("15min").ffill() if name != "intraday" else lr[name]
+            for col in sw.columns:
+                if col not in labels.columns:
+                    labels[col] = sw[col]
+
+    common = features.index.intersection(labels.index)
+    X, L = features.loc[common], labels.loc[common]
+
+    tbm_cols = sorted([c for c in L.columns if c.startswith("tbm_")])
+    mae_cols = sorted([c for c in L.columns if c.startswith("mae_")])
+    mfe_cols = sorted([c for c in L.columns if c.startswith("mfe_")])
+    rar_cols = sorted([c for c in L.columns if c.startswith("rar_")])
+    wgt_cols = sorted([c for c in L.columns if c.startswith("wgt_")])
+    strat_info = [{"style": c.replace("tbm_", "").split("_")[0], "dir": c.replace("tbm_", "").split("_")[1]}
+                  for c in tbm_cols]
+    partitions = {k: v for k, v in partition_features(list(X.columns)).items() if len(v) > 0}
+
+    n, n_strat = len(X), len(tbm_cols)
+    ws = n // 4
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    X_np = X.values.astype(np.float32)
+    acc = np.zeros((n, 4), dtype=np.float32); acc[:, 0] = 1.0
+    wgt_np = L[wgt_cols].values if wgt_cols else None
+
+    print(f"  Samples: {n}, Strategies: {n_strat}, Features: {X.shape[1]}", flush=True)
+    print(f"  Partitions: {[(k, len(v)) for k, v in partitions.items()]}", flush=True)
+
+    print(f"\n[4/5] Walk-forward (3 windows × {len(SEEDS)} seeds)...", flush=True)
+    seed_means = []
+
+    for seed in SEEDS:
+        wrets = []
+        for w in range(3):
+            ts = w * (ws // 3)
+            te = ts + int(ws * 2)
+            ve = te + int(ws * 0.5)
+            test_e = min(ve + ws, n)
+            if test_e <= ve: continue
+
+            torch.manual_seed(seed); np.random.seed(seed)
+            tds = TradingDatasetV4(X_np[ts:te], L[tbm_cols].values[ts:te], L[mae_cols].values[ts:te],
+                                    L[mfe_cols].values[ts:te], L[rar_cols].values[ts:te], acc[ts:te],
+                                    wgt_np[ts:te] if wgt_np is not None else None)
+            vds = TradingDatasetV4(X_np[te:ve], L[tbm_cols].values[te:ve], L[mae_cols].values[te:ve],
+                                    L[mfe_cols].values[te:ve], L[rar_cols].values[te:ve], acc[te:ve],
+                                    wgt_np[te:ve] if wgt_np is not None else None)
+
+            model = PLEv4(feature_partitions=partitions, n_account_features=4, n_strategies=n_strat,
+                          expert_hidden=128, expert_output=64, fusion_dim=128, dropout=0.2)
+            model = train_rdrop(model, tds, vds, epochs=50, device=device, patience=7, rdrop_alpha=1.0)
+            r = backtest_vec(model, X.iloc[ve:test_e], kline["15m"], kline["4h"], strat_info, device=device)
+            wrets.append(r["return"])
+
+        sm = np.mean(wrets)
+        seed_means.append(sm)
+        print(f"  Seed {seed}: {[round(x,1) for x in wrets]} → mean={sm:+.2f}%", flush=True)
+
+    overall = np.mean(seed_means)
+    std = np.std(seed_means)
+    elapsed = time.time() - t0
+
+    print(f"\n{'=' * 60}", flush=True)
+    print(f"  ITERATION 039 RESULTS", flush=True)
+    print(f"{'=' * 60}", flush=True)
+    print(f"  Overall: mean={overall:+.2f}%, std={std:.1f}%", flush=True)
+    print(f"  Regime features added: {n_regime}", flush=True)
+    print(f"  Compare: iter 038 with_scalp was +47.09% std=5.6%", flush=True)
+    print(f"  Time: {elapsed:.0f}s", flush=True)
+
+    report = {
+        "iteration": 39,
+        "approach": f"Multi-TF regime features ({n_regime} new: 4h trend + 1h momentum + 15m timing)",
+        "total_features": int(X.shape[1]),
+        "regime_features": n_regime,
+        "seeds": {str(s): round(m, 2) for s, m in zip(SEEDS, seed_means)},
+        "mean": round(overall, 2),
+        "std": round(std, 2),
+        "time_seconds": round(elapsed),
+    }
+    with open("reports/iteration_039.json", "w") as f:
+        json.dump(report, f, indent=2, default=str)
+    print(f"\n  Report saved to reports/iteration_039.json", flush=True)
+
+
+if __name__ == "__main__":
+    main()
