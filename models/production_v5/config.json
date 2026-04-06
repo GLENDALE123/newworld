@@ -1,19 +1,27 @@
 {
-  "version": "v5_final",
+  "version": "v6_selective",
   "coins": [
+    "CRVUSDT",
     "UNIUSDT",
-    "DUSKUSDT",
     "CHRUSDT",
-    "BCHUSDT",
-    "XRPUSDT"
+    "DUSKUSDT"
   ],
-  "verified_alpha": {
-    "UNI": "+0.80%",
-    "DUSK": "+0.52%",
-    "CHR": "+0.48%",
-    "BCH": "+0.24%",
-    "XRP": "+0.17%"
+  "excluded": [
+    "BCHUSDT (WR 49% at top20%)"
+  ],
+  "strategy": {
+    "ev_filter": "per-coin top 20%",
+    "capital_stages": {
+      "500": "7x",
+      "5000": "5x",
+      "50000": "3x"
+    },
+    "sizing": "capital-adaptive + coin volatility"
   },
-  "features": "base only (NO OI)",
-  "iterations": 91
+  "validated": {
+    "sim": "$500 \u2192 $24,819 (+4864%) 14mo",
+    "wr": "55%",
+    "trades": 1970
+  },
+  "iterations": 101
 }
