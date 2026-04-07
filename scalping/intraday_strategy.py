@@ -25,12 +25,17 @@ import lightgbm as lgb
 from dataclasses import dataclass
 
 
-INTRADAY_COINS = [
-    'SEIUSDT', 'TIAUSDT', 'DOTUSDT', '1000BONKUSDT', 'FETUSDT',
-    'ENAUSDT', 'TAOUSDT', 'APTUSDT', 'ARBUSDT', 'INJUSDT',
-    'ORDIUSDT', 'TRUUSDT', 'LTCUSDT', '1INCHUSDT', 'CHRUSDT',
-    'GALAUSDT', 'SNXUSDT', 'JTOUSDT', 'AAVEUSDT', 'BCHUSDT',
-]
+# Tier A: high return, higher risk (~0.4%+ per trade)
+TIER_A_COINS = ['SEIUSDT', 'TIAUSDT', 'DOTUSDT', '1000BONKUSDT', 'FETUSDT', 'ENAUSDT']
+
+# Tier B: balanced (~0.2-0.4% per trade)
+TIER_B_COINS = ['TAOUSDT', 'APTUSDT', 'BCHUSDT', 'ARBUSDT', 'INJUSDT', 'ORDIUSDT']
+
+# Tier C: stable, lower return (~0.1-0.2% per trade)
+TIER_C_COINS = ['TRUUSDT', 'LTCUSDT', '1INCHUSDT', 'CHRUSDT', 'GALAUSDT', 'SNXUSDT', 'JTOUSDT', 'AAVEUSDT']
+
+# All validated coins (20/20 positive in rolling WF)
+INTRADAY_COINS = TIER_A_COINS + TIER_B_COINS + TIER_C_COINS
 
 FEATURE_NAMES = [
     'coin_id', 'oi_chg_1h', 'oi_chg_4h', 'oi_level_z',
