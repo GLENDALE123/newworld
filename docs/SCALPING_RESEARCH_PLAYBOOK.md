@@ -368,6 +368,25 @@ Fee:       Taker 0.08%
            Volume: +0.213%/trade, 247K trades, $263K total
 ```
 
+### 단타 핵심 교훈: 스케일 의존적 과적합
+
+**8코인에서 양수인 개선이 20코인에서 실패하는 패턴이 4번 반복:**
+
+| 개선 | 8코인 | 20코인 | 교훈 |
+|---|---|---|---|
+| RMSE loss | +28% | -30% | loss function 변경은 특정 코인에 과적합 |
+| Target ensemble | +16% | -25% | 다중 타겟 평균화가 희석 |
+| Huber loss | +82% | -4% | outlier handling이 스케일에 일반화 안 됨 |
+| Time-weighted | +71% | -17% | 최근 가중이 일부 코인에만 유효 |
+
+**프로덕션 규칙**: 모든 최종 결정은 20코인+ rolling WF에서 검증. 8코인 결과는 탐색용으로만.
+
+### 단타 전체 실험 로그 (24번)
+
+**성공 (8)**: Checkpoint, CatBoost, Composite target, 20-coin, Reg+Cls, Tiered sizing, depth=6, l2=3
+
+**실패 (16)**: 30+ features, 18mo train, stop-loss, vol-normalized, separated vol+dir, CB cls, profit checkpoint, RMSE, Huber, target ensemble, cross-section ranking, cross-coin features, uncertainty filter, time-weighted, dynamic coin selection, more regularization
+
 ---
 
 *마지막 업데이트: 2026-04-08*
