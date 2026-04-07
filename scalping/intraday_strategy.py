@@ -142,9 +142,9 @@ class IntradayStrategy:
             # CatBoost for same horizon (+79% improvement in ensemble)
             if self.use_catboost:
                 cb = CatBoostRegressor(
-                    iterations=300, learning_rate=0.01, depth=6,
-                    l2_leaf_reg=5, random_seed=42, verbose=0,
-                    early_stopping_rounds=15,
+                    iterations=500, learning_rate=0.01, depth=6,
+                    l2_leaf_reg=3, random_seed=42, verbose=0,
+                    early_stopping_rounds=20,
                 )
                 cb.fit(X_tr, y_tr, eval_set=(X_va, y_va))
                 self.catboost_models[horizon] = cb
