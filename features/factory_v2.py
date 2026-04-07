@@ -93,6 +93,8 @@ def _order_flow_features(tick_bar: pd.DataFrame, target_tf: str) -> dict[str, pd
         "trade_count": "sum",
     }
     resampled = tb[list(agg.keys())].resample(target_tf).agg(agg)
+    # Shift by one bar so only completed bars contribute to the current row.
+    resampled = resampled.shift(1)
 
     for w in WINDOWS:
         f[f"flow_buy_ratio_{w}"] = resampled["buy_ratio"].rolling(w).mean()
@@ -293,15 +295,27 @@ def generate_features_v2(
     all_features = {}
 
     # 1. Multi-TF price features
+    # NOTE: features from timeframes longer than target_tf must be shifted
+    # to avoid lookahead bias. E.g., 1h features resampled to 15m would
+    # otherwise contain the current (incomplete) candle's data.
+    tf_minutes = {"1m": 1, "5m": 5, "15m": 15, "15min": 15, "1h": 60, "4h": 240}
+    target_minutes = tf_minutes.get(target_tf, 15)
+
     if progress:
         print("  [1/7] Multi-TF price features...")
     price_by_tf = {}
     for tf, df in kline_data.items():
         pf = _price_features(df, tf, WINDOWS)
         price_by_tf[tf] = pf
+        source_minutes = tf_minutes.get(tf, 15)
+        needs_shift = source_minutes > target_minutes
         # Resample to target
         for name, series in pf.items():
             resampled = series.resample(target_tf).last()
+            if needs_shift:
+                # Shift by 1 source period to use only completed candles
+                shift_bars = source_minutes // target_minutes
+                resampled = resampled.shift(shift_bars)
             all_features[name] = resampled
 
     # 2. Order flow

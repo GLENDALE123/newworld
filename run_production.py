@@ -71,7 +71,7 @@ def load_data(data_dir: str = "data/merged/BTCUSDT", start: str = "2020-06-01", 
     return kline, extras
 
 
-def build_features(kline, extras, target_tf="15min"):
+def build_features(kline, extras, target_tf="15min", selection_ratio=0.5):
     """Generate features using factory v2 + sequence features."""
     from features.factory_v2 import generate_features_v2
 
@@ -85,7 +85,9 @@ def build_features(kline, extras, target_tf="15min"):
     )
 
     # Sequence features (lookback=8)
-    top_feats = features.std().sort_values(ascending=False).head(30).index.tolist()
+    # Rank features using the train window only to avoid holdout leakage.
+    selection_end = max(1, int(len(features) * selection_ratio))
+    top_feats = features.iloc[:selection_end].std().sort_values(ascending=False).head(30).index.tolist()
     seq_cols = {}
     for lag in range(1, 8):
         for col in top_feats:
@@ -212,7 +214,7 @@ def main():
     kline, extras = load_data(data_dir, args.start, args.end)
 
     # Build features
-    features = build_features(kline, extras)
+    features = build_features(kline, extras, selection_ratio=0.5)
     print(f"Features: {features.shape}")
 
     # Build labels

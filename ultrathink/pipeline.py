@@ -111,17 +111,57 @@ class UltraThink:
         kline = self.load_klines(symbol, start, end)
         extra_data = self.load_extras(symbol, start, end)
 
-        # Base features
-        from features.factory_v2 import generate_features_v2
+        # Base features (polars for speed, convert to pandas for compatibility)
+        try:
+            import polars as pl
+            from features.factory_v2_polars import generate_features_v2_polars
 
-        base = generate_features_v2(
-            kline_data=kline,
-            tick_bar=extra_data.get("tick_bar"),
-            metrics=extra_data.get("metrics"),
-            funding=extra_data.get("funding_rate"),
-            target_tf=target_tf,
-            progress=False,
-        )
+            # Convert pandas DataFrames to polars LazyFrames
+            pl_klines = {}
+            for tf, df in kline.items():
+                pdf = df.reset_index() if df.index.name == "timestamp" or "timestamp" not in df.columns else df
+                if "timestamp" not in pdf.columns and pdf.index.name == "timestamp":
+                    pdf = pdf.reset_index()
+                pl_klines[tf] = pl.from_pandas(pdf).lazy()
+
+            pl_extras = {}
+            for name in ["tick_bar", "metrics", "funding_rate"]:
+                ed = extra_data.get(name)
+                if ed is not None and len(ed) > 0:
+                    pdf = ed.reset_index() if ed.index.name == "timestamp" or "timestamp" not in ed.columns else ed
+                    if "timestamp" not in pdf.columns and pdf.index.name == "timestamp":
+                        pdf = pdf.reset_index()
+                    pl_extras[name] = pl.from_pandas(pdf).lazy()
+
+            # Map target_tf for polars (15min → 15m)
+            pl_tf = target_tf.replace("min", "m") if "min" in target_tf else target_tf
+
+            pl_result = generate_features_v2_polars(
+                kline_data=pl_klines,
+                tick_bar=pl_extras.get("tick_bar"),
+                metrics=pl_extras.get("metrics"),
+                funding=pl_extras.get("funding_rate"),
+                target_tf=pl_tf,
+                progress=False,
+            )
+
+            # Convert back to pandas with timestamp index
+            base = pl_result.to_pandas()
+            if "timestamp" in base.columns:
+                base = base.set_index("timestamp")
+            base.index.name = "timestamp"
+
+        except Exception as e:
+            # Fallback to pandas factory_v2
+            from features.factory_v2 import generate_features_v2
+            base = generate_features_v2(
+                kline_data=kline,
+                tick_bar=extra_data.get("tick_bar"),
+                metrics=extra_data.get("metrics"),
+                funding=extra_data.get("funding_rate"),
+                target_tf=target_tf,
+                progress=False,
+            )
 
         parts = [base]
 
@@ -138,9 +178,27 @@ class UltraThink:
 
         features = pd.concat(parts, axis=1)
 
-        # Lag features from top-variance columns
+        # Lag features from UNIVERSAL feature set (same across all coins)
+        # Previously used per-coin top-variance which caused feature mismatch
         if lag_top_n > 0:
-            top_cols = base.std().sort_values(ascending=False).head(lag_top_n).index.tolist()
+            # Universal lag candidates: features that are important across ALL coins
+            # Order flow + derivatives + key price features
+            universal_lag_candidates = [
+                "flow_cvd", "flow_delta_sum_5", "flow_delta_sum_10",
+                "flow_delta_sum_20", "flow_delta_sum_50", "flow_delta_sum_100",
+                "flow_cvd_chg_5", "flow_cvd_chg_10", "flow_cvd_chg_20",
+                "flow_cvd_chg_50", "flow_cvd_chg_100",
+                "flow_buy_ratio", "flow_intensity_5", "flow_intensity_20",
+                "deriv_oi", "deriv_oi_chg_5", "deriv_oi_chg_10",
+                "deriv_oi_zscore_20", "deriv_oi_zscore_50",
+                "fund_rate", "fund_zscore_20",
+                "15m_atr_5", "15m_atr_20", "15m_atr_pct_5", "15m_atr_pct_20",
+                "15m_ret_5", "15m_ret_10", "15m_ret_20", "15m_ret_50",
+                "15m_vol_5", "15m_vol_20",
+            ]
+            # Filter to actually available columns
+            top_cols = [c for c in universal_lag_candidates if c in base.columns][:lag_top_n]
+
             lag_dict = {}
             for lag in lag_depths:
                 for col in top_cols:
@@ -149,6 +207,19 @@ class UltraThink:
                 for lag in [1, 2, 4]:
                     lag_dict[f"{col}_chg{lag}"] = base[col] - base[col].shift(lag)
             features = pd.concat([features, pd.DataFrame(lag_dict, index=base.index)], axis=1)
+
+        # Quality transforms: fund_rate_rz + ix_cvd_x_calm
+        from features.transforms import regime_zscore, build_interaction_features
+        if "fund_rate" in features.columns and "15m_vol_20" in features.columns:
+            features["fund_rate_rz"] = regime_zscore(
+                features["fund_rate"], features["15m_vol_20"], 100,
+            ).values
+        ix = build_interaction_features(features)
+        if not ix.empty:
+            # Only keep the high-value interactions
+            keep_ix = [c for c in ix.columns if "cvd_x_calm" in c or "oi_price" in c]
+            if keep_ix:
+                features = pd.concat([features, ix[keep_ix]], axis=1)
 
         # Clean
         features = features.replace([np.inf, -np.inf], np.nan)
@@ -282,14 +353,28 @@ class UltraThink:
 
         # Merge all strategies into single DataFrame aligned to target_tf
         base_strat = "intraday" if "intraday" in lr else next(iter(lr))
-        frames = [lr[base_strat]]
+        base_df = lr[base_strat]
+        base_index = base_df.index
+        frames = [base_df]
+        source_tf_map = {
+            "scalp": "5m",
+            "intraday": "15m",
+            "daytrade": "1h",
+            "swing": "4h",
+        }
         for name, sdf in lr.items():
             if name == base_strat:
                 continue
-            resampled = sdf.resample(target_tf).ffill()
-            new_cols = [c for c in resampled.columns if c not in lr[base_strat].columns]
+            source_tf = source_tf_map.get(name)
+            if source_tf is None:
+                continue
+            # Assign labels only when the source bar is completed.
+            completed = sdf.copy()
+            completed.index = completed.index + pd.to_timedelta(source_tf)
+            completed = completed.reindex(base_index)
+            new_cols = [c for c in completed.columns if c not in base_df.columns]
             if new_cols:
-                frames.append(resampled[new_cols])
+                frames.append(completed[new_cols])
         labels = pd.concat(frames, axis=1)
 
         self.cache.put(f"label_{symbol}", params, labels)

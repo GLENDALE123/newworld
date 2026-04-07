@@ -6,5 +6,37 @@ build/
 .eggs/
 *.egg
 .pytest_cache/
+
+# Data (33GB+)
 data/
+catboost_info/
+
+# Environment
+.venv/
 .env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model artifacts
+*.pkl
+*.joblib
+*.onnx
+*.bin
+*.pt
+models/production*/
+ultratm.egg-info/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs
+*.log
+wandb/

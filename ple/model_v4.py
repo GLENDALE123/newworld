@@ -58,7 +58,7 @@ class PLEv4(nn.Module):
     def __init__(
         self,
         feature_partitions: dict[str, list[int]],
-        n_account_features: int = 4,
+        n_account_features: int = 0,  # deprecated, kept for backward compat
         n_strategies: int = 128,
         expert_hidden: int = 128,
         expert_output: int = 64,
@@ -82,16 +82,9 @@ class PLEv4(nn.Module):
         for name, indices in feature_partitions.items():
             self.experts[name] = Expert(len(indices), expert_hidden, expert_output, dropout)
 
-        # Account encoder
-        account_dim = 32
-        self.account_encoder = nn.Sequential(
-            nn.Linear(n_account_features, account_dim),
-            nn.GELU(),
-        )
-
         # Gate: attention over experts
         n_experts = len(feature_partitions)
-        gate_input = n_experts * expert_output + account_dim
+        gate_input = n_experts * expert_output
         self.gate_query = nn.Linear(gate_input, expert_output)
         self.gate_keys = nn.ModuleDict({
             name: nn.Linear(expert_output, expert_output)
@@ -99,7 +92,7 @@ class PLEv4(nn.Module):
         })
 
         # Fusion
-        fusion_input = expert_output + account_dim
+        fusion_input = expert_output
         self.fusion = nn.Sequential(
             nn.Linear(fusion_input, fusion_dim),
             nn.GELU(),
@@ -139,24 +132,22 @@ class PLEv4(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, features: torch.Tensor, account: torch.Tensor) -> dict:
+    def forward(self, features: torch.Tensor, account: torch.Tensor | None = None) -> dict:
         # Expert outputs on partitioned features
         expert_outs = {}
         for name, indices in self.feature_partitions.items():
-            idx = torch.tensor(indices, device=features.device)
+            idx = torch.tensor(indices, dtype=torch.long, device=features.device)
             x = features[:, idx]
             if self.use_vsn:
                 x = self.vsns[name](x)
             expert_outs[name] = self.experts[name](x)
 
-        account_enc = self.account_encoder(account)
-
         expert_list = list(expert_outs.values())
         expert_names = list(expert_outs.keys())
         expert_stacked = torch.stack(expert_list, dim=1)  # (B, n_exp, dim)
 
-        # Gated fusion
-        all_cat = torch.cat(expert_list + [account_enc], dim=-1)
+        # Gated fusion (market data only, no account state)
+        all_cat = torch.cat(expert_list, dim=-1)
         q = self.gate_query(all_cat)
 
         scores = []
@@ -169,7 +160,7 @@ class PLEv4(nn.Module):
         gate_weights = F.softmax(gate_scores / (q.shape[-1] ** 0.5), dim=-1)
         gated = torch.bmm(gate_weights.unsqueeze(1), expert_stacked).squeeze(1)
 
-        fused = self.fusion(torch.cat([gated, account_enc], dim=-1))
+        fused = self.fusion(gated)
 
         # Multi-label output (sigmoid, NOT softmax)
         label_logits = self.label_head(fused)
