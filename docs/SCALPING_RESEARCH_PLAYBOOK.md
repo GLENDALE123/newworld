@@ -332,7 +332,41 @@ Fee:       Taker 0.08%
 
 - BTC/ETH 단독 regression → iter 1~8 (학습 불가)
 - 1h hold on BTC → fee 비중 12%, 불충분
-- Dynamic hold (단순 best horizon 선택) → 93% 4h로 편향, 비효율
+- Dynamic hold (단순 best horizon 선택) → 93% 4h로 편향
+- 피처 17→30+ → 과적합으로 성능 하락
+- 학습 9mo→18mo → 오래된 데이터가 noise
+- 조기 손절 (SL -0.5~2%) → 모두 성능 하락 (2h c2c 최적)
+- Vol-normalized target → raw return보다 못함
+- Separated (vol predict + direction) → combined regression보다 못함
+
+### 단타 최종 진화 과정 (모든 개선 기록)
+
+| # | 개선 | 효과 | WF 검증 |
+|---|---|---|---|
+| 1 | LGB regression 2h | baseline +0.084% | ✅ |
+| 2 | Checkpoint exit (1h+2h agree) | **+176%** | ✅ |
+| 3 | CatBoost 교체 | **+48%** vs LGB | ✅ |
+| 4 | Composite target (1h+2h+4h equal) | **+36%** total | ✅ |
+| 5 | 20코인 universal | 20/20 양수 | ✅ |
+| 6 | Reg+Cls agree filter | Quality tier | ✅ |
+| 7 | Tiered sizing ($300/500/800) | +12% equity | ✅ |
+| **최종** | **CB + Composite + Cls + Checkpoint** | **+0.424%/trade** | **✅** |
+
+### 최종 단타 전략 사양 (2026-04-08)
+
+```
+모델:      CatBoost regression (composite: equal 1h+2h+4h)
+           + LightGBM dual classification (Quality filter p>0.55)
+피처:      17개 (oi_chg, funding, taker_ls_z, ret, vol, buy_ratio,
+           btc_ret_1h, btc_oi_chg, btc_vol, alt_btc_z, hour)
+코인:      20개 알트 (Tier A/B/C)
+진입:      |predicted composite return| > 0.002
+청산:      Checkpoint — |pred|>0.005 → 4h, else → 2h
+사이징:    Tiered ($300/$500/$800 by |pred|)
+검증:      30-window rolling WF, 20/20 코인 양수
+성과:      Quality: +0.424%/trade, WR 54.7%, 81K trades
+           Volume: +0.213%/trade, 247K trades, $263K total
+```
 
 ---
 
