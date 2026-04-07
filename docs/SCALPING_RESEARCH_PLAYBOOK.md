@@ -293,5 +293,48 @@ Fee:       Taker 0.08%
 
 ---
 
+## Appendix: 단타 (Intraday) 연구 결과
+
+같은 Playbook 순서를 따라 단타 모델을 개발함.
+
+### 스캘핑 vs 단타 차이
+
+| | 스캘핑 | 단타 |
+|---|---|---|
+| 홀딩 | 15분 고정 | **1-4h 동적 (Checkpoint)** |
+| 타겟 | Binary direction | **Regression (수익률 예측)** |
+| 핵심 피처 | buy_ratio (미시구조) | **btc_vol, OI (포지셔닝)** |
+| Fee 비중 | 23% of std | **4.7%** |
+| 양수 코인 | 12/15 (알트만) | **67/85 (79%, 메이저 포함)** |
+| 거래당 수익 | +0.094% | **+0.329%** (3.5배) |
+
+### 단타 핵심 발견
+
+1. **BTC 변동성이 알트 단타의 #1 드라이버** — BTC가 흔들릴 때 알트에서 기회
+2. **Regression이 Classification보다 우월** — 스캘핑에서는 실패했지만 단타에서 성공 (4h return std 충분)
+3. **Checkpoint exit** — 1h+2h 모델 동의 시 더 오래 보유, 불일치 시 조기 청산 (+39% 개선)
+4. **79% 코인 양수** — 스캘핑보다 훨씬 광범위
+5. **Cross-asset 피처** — btc_ret_1h, btc_oi_chg, alt_btc_z가 중요
+
+### 단타 전략 사양
+
+```
+모델:      Regression GBM × 3 horizons (1h/2h/4h), ensemble x2
+피처:      17개 (btc_vol, oi_level_z, ret_24h, funding, ...)
+코인:      20개 알트 (67/85 양수 중 Top 20)
+진입:      |pred_2h| > 0.002
+청산:      Checkpoint — 1h+2h agree+strong→4h, agree→2h, disagree→1h
+결과:      WR 52.4%, Taker +0.329%/trade, $100K total OOS
+검증:      Walk-forward, close-to-close, 1m 교차 검증 (corr 0.98+)
+```
+
+### 단타에서 실패한 것
+
+- BTC/ETH 단독 regression → iter 1~8 (학습 불가)
+- 1h hold on BTC → fee 비중 12%, 불충분
+- Dynamic hold (단순 best horizon 선택) → 93% 4h로 편향, 비효율
+
+---
+
 *마지막 업데이트: 2026-04-08*
 *작성: Model Researcher + PM*
